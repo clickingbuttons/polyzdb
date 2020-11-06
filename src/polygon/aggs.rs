@@ -15,7 +15,7 @@ pub fn get_agg1m(
   config: &Config
 ) -> io::Result<Vec<OHLCV>> {
   let uri = format!(
-    "{}/aggs/ticker/{}/range/1/minute/{}/{}?adjusted=false&apiKey={}&limit=50000",
+    "{}/aggs/ticker/{}/range/1/minute/{}/{}?unadjusted=true&apiKey={}&limit=50000",
     POLYGON_BASE,
     symbol,
     from.format("%Y-%m-%d"),

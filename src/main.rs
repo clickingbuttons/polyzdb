@@ -39,6 +39,8 @@ fn main() {
   //   }
   // );
 
+  println!("Downloading agg1d index data");
   download_agg1d(&thread_pool, config.clone());
+  println!("Downloading agg1m data");
   download_agg1m(&thread_pool, config.clone());
 }

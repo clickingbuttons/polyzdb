@@ -10,7 +10,7 @@ use std::io::{self, Error, ErrorKind};
 
 pub fn get_grouped(date: &NaiveDate, config: &Config) -> io::Result<Vec<OHLCV>> {
   let uri = format!(
-    "{}/aggs/grouped/locale/US/market/STOCKS/{}?adjusted=false&apiKey={}",
+    "{}/aggs/grouped/locale/US/market/STOCKS/{}?unadjusted=true&apiKey={}",
     POLYGON_BASE,
     date.format("%Y-%m-%d"),
     config.polygon_key

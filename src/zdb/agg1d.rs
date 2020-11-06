@@ -23,6 +23,7 @@ fn download_agg1d_year(
   agg1d: &mut Table,
   config: Arc<Config>
 ) {
+  let now = Instant::now();
   let from = NaiveDate::from_ymd(year, 1, 1);
   let to = cmp::min(
     NaiveDate::from_ymd(year + 1, 1, 1),
@@ -30,9 +31,7 @@ fn download_agg1d_year(
   );
   let candles = Arc::new(Mutex::new(Vec::<OHLCV>::new()));
 
-  let market_days = MarketDays { from, to };
-
-  for (i, day) in market_days.enumerate() {
+  for (i, day) in (MarketDays { from, to }).enumerate() {
     let candles_year = Arc::clone(&candles);
     let config = config.clone();
     thread_pool.execute(move || {
@@ -42,7 +41,7 @@ fn download_agg1d_year(
       for j in 0..10 {
         match get_grouped(&day, &config) {
           Ok(mut candles) => {
-            println!("{}: {} candles", day, candles.len());
+            // println!("{}: {} candles", day, candles.len());
             candles_year.lock().unwrap().append(&mut candles);
             return;
           }
@@ -58,9 +57,10 @@ fn download_agg1d_year(
   }
   thread_pool.join();
 
-  println!("Sorting {}", year);
   // Sort by ts, symbol
   let mut candles = candles.lock().unwrap();
+  let num_candles = candles.len();
+  println!("{}: Sorting {} candles", year, num_candles);
   candles.sort_unstable_by(|c1, c2| {
     if c1.ts == c2.ts {
       c1.symbol.cmp(&c2.symbol)
@@ -68,9 +68,7 @@ fn download_agg1d_year(
       c1.ts.cmp(&c2.ts)
     }
   });
-  let now = Instant::now();
-  let num_candles = candles.len();
-  println!("Writing {}", year);
+  println!("{}: Writing {} candles", year, num_candles);
   for c in candles.drain(..) {
     // Filter out crazy tickers
     // https://github.com/polygon-io/issues/issues/3
@@ -86,13 +84,13 @@ fn download_agg1d_year(
     agg1d.put_currency(c.low);
     agg1d.put_currency(c.close);
     agg1d.put_u64(c.volume);
-    agg1d.put_currency(0.0);
+    agg1d.put_currency(c.close);
     agg1d.write();
   }
-  println!("Flushing {} took {}ms", year, now.elapsed().as_millis());
+  println!("{}: Flushing {} candles", year, num_candles);
   agg1d.flush();
 
-  println!("Year {}: {} candles", year, num_candles);
+  println!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
 pub fn download_agg1d(thread_pool: &ThreadPool, config: Arc<Config>) {

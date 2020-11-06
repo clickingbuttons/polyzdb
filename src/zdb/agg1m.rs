@@ -37,13 +37,14 @@ fn download_agg1m_month(
   // However, Polygon recommends downloading a month at a time.
   // Humans think in months much better than 52 day periods, so I'm inclined to
   // go with months for now.
-
+  let now = Instant::now();
   let from = NaiveDate::from_ymd(year, month, 1);
   let to = cmp::min(
     add_month(&from),
     Utc::today().naive_utc()
   );
-  let to = to - Duration::days(1); // Polygon is inclusive of last day
+  let month_format = format!("{}-{:02}", year, month);
+  println!("{}: Scanning agg1d for symbols from {} to {}", month_format, from, to);
   let mut symbols = HashSet::<String>::default();
   agg1d.scan(
     from.and_hms(0, 0, 0).timestamp_nanos(),
@@ -54,7 +55,8 @@ fn download_agg1m_month(
     }
   );
 
-  let month_format = format!("{}-{:02}", year, month);
+  let to = to - Duration::days(1); // Polygon is inclusive of last day
+  println!("{}: Downloading candles for {} symbols", month_format, symbols.len());
   let candles = Arc::new(Mutex::new(Vec::<OHLCV>::new()));
   for (i, sym) in symbols.iter().enumerate() {
     let month_format = month_format.clone();
@@ -112,7 +114,6 @@ fn download_agg1m_month(
     }
   });
   
-  let now = Instant::now();
   println!("{}: Writing {} candles", month_format, num_candles);
   for c in candles.iter() {
     agg1m.put_timestamp(c.ts);
@@ -125,20 +126,10 @@ fn download_agg1m_month(
     agg1m.put_currency(0.0);
     agg1m.write();
   }
-  println!(
-    "{}: Wrote {} candles in {}ms",
-    month_format,
-    num_candles,
-    now.elapsed().as_millis()
-  );
-  let now = Instant::now();
+  println!("{}: Flushing {} candles", month_format, num_candles);
   agg1m.flush();
-  println!(
-    "{}: Flushed {} candles in {}ms",
-    month_format,
-    num_candles,
-    now.elapsed().as_millis()
-  );
+
+  println!("{}: saved {} days in {}s", month_format, agg1m.partition_meta.keys().len(), now.elapsed().as_secs())
 }
 
 pub fn download_agg1m(thread_pool: &ThreadPool, config: Arc<Config>) {
@@ -180,6 +171,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, config: Arc<Config>) {
   let to = Utc::now().naive_utc().date();
   let mut iter = from.clone();
   while iter < to {
+    println!("Downloading {}-{:02}", iter.year(), iter.month());
     download_agg1m_month(
       iter.year(),
       iter.month(),
