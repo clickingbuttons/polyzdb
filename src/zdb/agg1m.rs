@@ -50,7 +50,7 @@ fn download_agg1m_month(
   let from = cmp::max(
     agg1m
       .get_last_ts()
-      .unwrap_or(i64::MIN)
+      .unwrap_or(0)
       .to_naive_date_time()
       .date()
       + Duration::days(1),

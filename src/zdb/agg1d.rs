@@ -30,7 +30,7 @@ fn download_agg1d_year(
   let from = cmp::max(
     agg1d
       .get_last_ts()
-      .unwrap_or(i64::MIN)
+      .unwrap_or(0)
       .to_naive_date_time()
       .date(),
     NaiveDate::from_ymd(year, 1, 1)
