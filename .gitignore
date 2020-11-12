@@ -1,3 +1,5 @@
 /target
 /data
-POLYGON_KEY
+/logs
+polygon.json
+

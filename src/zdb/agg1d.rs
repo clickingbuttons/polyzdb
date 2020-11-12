@@ -1,9 +1,12 @@
-use crate::{
-  config::Config,
-  polygon::{grouped::*, OHLCV},
-  zdb::MarketDays
+use crate::zdb::MarketDays;
+use chrono::{Datelike, Duration, NaiveDate, Utc};
+use polygon_io::{
+  client::Client,
+  equities::{
+    grouped::{Locale, Market},
+    Candle
+  }
 };
-use chrono::{Datelike, NaiveDate, Utc};
 use std::{
   cmp, process,
   sync::{Arc, Mutex},
@@ -21,28 +24,36 @@ fn download_agg1d_year(
   year: i32,
   thread_pool: &ThreadPool,
   agg1d: &mut Table,
-  config: Arc<Config>
+  client: Arc<Client>
 ) {
   let now = Instant::now();
-  let from = NaiveDate::from_ymd(year, 1, 1);
+  let from = cmp::max(
+    agg1d
+      .get_last_ts()
+      .unwrap_or(i64::MIN)
+      .to_naive_date_time()
+      .date(),
+    NaiveDate::from_ymd(year, 1, 1)
+  );
   let to = cmp::min(
     NaiveDate::from_ymd(year + 1, 1, 1),
-    Utc::now().naive_utc().date()
+    Utc::now().naive_utc().date() - Duration::days(1)
   );
-  let candles = Arc::new(Mutex::new(Vec::<OHLCV>::new()));
+  let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
 
+  println!("Downloading agg1d in {}..{}", from, to);
   for (i, day) in (MarketDays { from, to }).enumerate() {
     let candles_year = Arc::clone(&candles);
-    let config = config.clone();
+    let client = client.clone();
     thread_pool.execute(move || {
       // Have 2/3 sleep for 1-2s to avoid spamming at start
       thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
       // Retry up to 10 times
       for j in 0..10 {
-        match get_grouped(&day, &config) {
-          Ok(mut candles) => {
-            // println!("{}: {} candles", day, candles.len());
-            candles_year.lock().unwrap().append(&mut candles);
+        match client.get_grouped(Locale::US, Market::Stocks, day, Some(false)) {
+          Ok(mut resp) => {
+            // println!("{}: {} candles", day, resp.results.len());
+            candles_year.lock().unwrap().append(&mut resp.results);
             return;
           }
           Err(e) => {
@@ -93,7 +104,7 @@ fn download_agg1d_year(
   println!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
-pub fn download_agg1d(thread_pool: &ThreadPool, config: Arc<Config>) {
+pub fn download_agg1d(thread_pool: &ThreadPool, client: Arc<Client>) {
   // Setup DB
   let schema = Schema::new("agg1d")
     .add_cols(vec![
@@ -109,11 +120,11 @@ pub fn download_agg1d(thread_pool: &ThreadPool, config: Arc<Config>) {
 
   let mut agg1d = Table::create_or_open(schema).expect("Could not open table");
   let from = match agg1d.get_last_ts() {
-    Some(ts) => ts.to_naive_date_time().date().year() + 1,
+    Some(ts) => ts.to_naive_date_time().date().year(),
     None => 2004
   };
-  let to = Utc::now().date().year();
+  let to = (Utc::now().date() - Duration::days(1)).year();
   for i in from..=to {
-    download_agg1d_year(i, &thread_pool, &mut agg1d, config.clone());
+    download_agg1d_year(i, &thread_pool, &mut agg1d, client.clone());
   }
 }

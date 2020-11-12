@@ -1,21 +1,15 @@
-mod config;
-mod polygon;
 mod zdb;
 
+use polygon_io::client::Client;
 use std::{panic, process, sync::Arc};
 use threadpool::ThreadPool;
 // use chrono::NaiveDate;
 // use ::zdb::table::Table;
 
-use crate::{
-  config::Config,
-  zdb::{agg1d::download_agg1d, agg1m::download_agg1m}
-};
+use crate::zdb::{agg1d::download_agg1d, agg1m::download_agg1m};
 
 fn main() {
-  let config = Arc::new(
-    Config::open("POLYGON_KEY").expect("Environment variable or file POLYGON_KEY must exist")
-  );
+  let config = Arc::new(Client::new());
   // Polygon starts throttling after 100 open connections.
   // We want to saturate all 100.
   let thread_pool = ThreadPool::new(150);

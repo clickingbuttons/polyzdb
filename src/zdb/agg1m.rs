@@ -1,14 +1,23 @@
-use crate::{
-  config::Config,
-  polygon::{aggs::get_agg1m, OHLCV}
-};
+extern crate polygon_io;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
-use std::{io::ErrorKind, cmp, collections::HashSet, process, sync::{Arc, Mutex}, thread, time::Instant};
+use polygon_io::{
+  client::Client,
+  equities::{aggs::Timespan, Candle}
+};
+use std::{
+  cmp,
+  collections::HashSet,
+  io::ErrorKind,
+  process,
+  sync::{Arc, Mutex},
+  thread,
+  time::Instant
+};
 use threadpool::ThreadPool;
 use zdb::{
+  calendar::ToNaiveDateTime,
   schema::{Column, ColumnType, PartitionBy, Schema},
-  table::Table,
-  calendar::ToNaiveDateTime
+  table::Table
 };
 
 fn add_month(date: &NaiveDate) -> NaiveDate {
@@ -30,7 +39,7 @@ fn download_agg1m_month(
   thread_pool: &ThreadPool,
   agg1d: &Table,
   agg1m: &mut Table,
-  config: Arc<Config>
+  client: Arc<Client>
 ) {
   // The US equity market is open from 4:00-20:00 which is 960 minutes.
   // We could download up to 50k bars/request with &limit=50000, which is 52 days.
@@ -38,40 +47,54 @@ fn download_agg1m_month(
   // Humans think in months much better than 52 day periods, so I'm inclined to
   // go with months for now.
   let now = Instant::now();
-  let from = NaiveDate::from_ymd(year, month, 1);
-  let to = cmp::min(
-    add_month(&from),
-    Utc::today().naive_utc()
+  let from = cmp::max(
+    agg1m
+      .get_last_ts()
+      .unwrap_or(i64::MIN)
+      .to_naive_date_time()
+      .date()
+      + Duration::days(1),
+    NaiveDate::from_ymd(year, month, 1)
   );
+  let to = cmp::min(add_month(&from), Utc::today().naive_utc());
   let month_format = format!("{}-{:02}", year, month);
-  println!("{}: Scanning agg1d for symbols from {} to {}", month_format, from, to);
+  println!(
+    "{}: Scanning agg1d for symbols in {}..{}",
+    month_format, from, to
+  );
   let mut symbols = HashSet::<String>::default();
   agg1d.scan(
     from.and_hms(0, 0, 0).timestamp_nanos(),
     to.and_hms(0, 0, 0).timestamp_nanos(),
-    vec!["ts", "sym"],
+    vec!["ts", "sym", "volume"],
     |row| {
-      symbols.insert(row[1].get_symbol().clone());
+      if row[2].get_u64() > 0 {
+        symbols.insert(row[1].get_symbol().clone());
+      }
     }
   );
 
   let to = to - Duration::days(1); // Polygon is inclusive of last day
-  println!("{}: Downloading candles for {} symbols", month_format, symbols.len());
-  let candles = Arc::new(Mutex::new(Vec::<OHLCV>::new()));
+  println!(
+    "{}: Downloading candles for {} symbols",
+    month_format,
+    symbols.len()
+  );
+  let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
   for (i, sym) in symbols.iter().enumerate() {
     let month_format = month_format.clone();
     let sym = sym.clone();
     let candles_year = Arc::clone(&candles);
-    let config = config.clone();
+    let client = client.clone();
     thread_pool.execute(move || {
       // Have 2/3 sleep for 1-2s to avoid spamming at start
       thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
       // Retry up to 10 times
       for j in 0..10 {
-        match get_agg1m(&from, &to, &sym, &config) {
-          Ok(mut candles) => {
+        match client.get_aggs(&sym, 1, Timespan::Minute, from, to, Some(false), None, None) {
+          Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
-            candles_year.lock().unwrap().append(&mut candles);
+            candles_year.lock().unwrap().append(&mut resp.results);
             return;
           }
           Err(e) => {
@@ -113,7 +136,7 @@ fn download_agg1m_month(
       c1.ts.cmp(&c2.ts)
     }
   });
-  
+
   println!("{}: Writing {} candles", month_format, num_candles);
   for c in candles.iter() {
     agg1m.put_timestamp(c.ts);
@@ -129,10 +152,15 @@ fn download_agg1m_month(
   println!("{}: Flushing {} candles", month_format, num_candles);
   agg1m.flush();
 
-  println!("{}: saved {} days in {}s", month_format, agg1m.partition_meta.keys().len(), now.elapsed().as_secs())
+  println!(
+    "{}: saved {} days in {}s",
+    month_format,
+    agg1m.partition_meta.keys().len(),
+    now.elapsed().as_secs()
+  )
 }
 
-pub fn download_agg1m(thread_pool: &ThreadPool, config: Arc<Config>) {
+pub fn download_agg1m(thread_pool: &ThreadPool, client: Arc<Client>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in agg1m");
@@ -165,7 +193,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, config: Arc<Config>) {
   // );
   let mut agg1m = Table::create_or_open(schema).expect("Could not open table");
   let from = match agg1m.get_last_ts() {
-    Some(ts) => ts.to_naive_date_time().date() + Duration::days(7),
+    Some(ts) => ts.to_naive_date_time().date(),
     None => NaiveDate::from_ymd(2004, 1, 1)
   };
   let to = Utc::now().naive_utc().date();
@@ -178,7 +206,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, config: Arc<Config>) {
       &thread_pool,
       &agg1d,
       &mut agg1m,
-      config.clone()
+      client.clone()
     );
     iter = add_month(&iter);
   }
