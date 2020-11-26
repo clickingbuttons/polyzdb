@@ -38,3 +38,4 @@ fn main() {
   println!("Downloading agg1m data");
   download_agg1m(&thread_pool, config.clone());
 }
+

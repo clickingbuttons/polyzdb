@@ -2,10 +2,8 @@ use crate::zdb::MarketDays;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use polygon_io::{
   client::Client,
-  equities::{
-    grouped::{Locale, Market},
-    Candle
-  }
+  core::Candle,
+  core::grouped::{Locale, Market, GroupedParams}
 };
 use std::{
   cmp, process,
@@ -45,12 +43,13 @@ fn download_agg1d_year(
   for (i, day) in (MarketDays { from, to }).enumerate() {
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
+    let grouped_params = GroupedParams::new().with_unadjusted(true).params;
     thread_pool.execute(move || {
       // Have 2/3 sleep for 1-2s to avoid spamming at start
       thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
       // Retry up to 10 times
       for j in 0..10 {
-        match client.get_grouped(Locale::US, Market::Stocks, day, Some(false)) {
+        match client.get_grouped(Locale::US, Market::Stocks, day, Some(&grouped_params)) {
           Ok(mut resp) => {
             // println!("{}: {} candles", day, resp.results.len());
             candles_year.lock().unwrap().append(&mut resp.results);

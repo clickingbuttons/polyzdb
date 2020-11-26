@@ -2,7 +2,9 @@ extern crate polygon_io;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use polygon_io::{
   client::Client,
-  equities::{aggs::Timespan, Candle}
+  core::Candle,
+  core::aggs::AggsParams,
+  core::aggs::Timespan
 };
 use std::{
   cmp,
@@ -47,6 +49,7 @@ fn download_agg1m_month(
   // Humans think in months much better than 52 day periods, so I'm inclined to
   // go with months for now.
   let now = Instant::now();
+  let month_start = NaiveDate::from_ymd(year, month, 1);
   let from = cmp::max(
     agg1m
       .get_last_ts()
@@ -54,9 +57,9 @@ fn download_agg1m_month(
       .to_naive_date_time()
       .date()
       + Duration::days(1),
-    NaiveDate::from_ymd(year, month, 1)
+    month_start
   );
-  let to = cmp::min(add_month(&from), Utc::today().naive_utc());
+  let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
   let month_format = format!("{}-{:02}", year, month);
   println!(
     "{}: Scanning agg1d for symbols in {}..{}",
@@ -86,12 +89,13 @@ fn download_agg1m_month(
     let sym = sym.clone();
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
+    let params = AggsParams::new().with_adjusted(false).with_limit(50_000).params;
     thread_pool.execute(move || {
       // Have 2/3 sleep for 1-2s to avoid spamming at start
       thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
       // Retry up to 10 times
       for j in 0..10 {
-        match client.get_aggs(&sym, 1, Timespan::Minute, from, to, Some(false), None, None) {
+        match client.get_aggs(&sym, 1, Timespan::Minute, from, to, Some(&params)) {
           Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
             candles_year.lock().unwrap().append(&mut resp.results);
@@ -153,9 +157,8 @@ fn download_agg1m_month(
   agg1m.flush();
 
   println!(
-    "{}: saved {} days in {}s",
+    "{}: downloaded in {}s",
     month_format,
-    agg1m.partition_meta.keys().len(),
     now.elapsed().as_secs()
   )
 }
@@ -193,7 +196,10 @@ pub fn download_agg1m(thread_pool: &ThreadPool, client: Arc<Client>) {
   // );
   let mut agg1m = Table::create_or_open(schema).expect("Could not open table");
   let from = match agg1m.get_last_ts() {
-    Some(ts) => ts.to_naive_date_time().date(),
+    Some(ts) => {
+      let last_date = ts.to_naive_date_time().date();
+      NaiveDate::from_ymd(last_date.year(), last_date.month(), 1)
+    },
     None => NaiveDate::from_ymd(2004, 1, 1)
   };
   let to = Utc::now().naive_utc().date();
