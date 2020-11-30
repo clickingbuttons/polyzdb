@@ -6,7 +6,7 @@ use threadpool::ThreadPool;
 // use chrono::NaiveDate;
 // use ::zdb::table::Table;
 
-use crate::zdb::{agg1d::download_agg1d, agg1m::download_agg1m};
+use crate::zdb::{agg1d::download_agg1d, agg1m::download_agg1m, trades::download_trades};
 
 fn main() {
   let config = Arc::new(Client::new());
@@ -37,5 +37,7 @@ fn main() {
   download_agg1d(&thread_pool, config.clone());
   println!("Downloading agg1m data");
   download_agg1m(&thread_pool, config.clone());
+  println!("Downloading trade data");
+  download_trades(&thread_pool, config.clone());
 }
 

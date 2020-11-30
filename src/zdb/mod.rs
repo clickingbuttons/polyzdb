@@ -1,5 +1,6 @@
 pub mod agg1d;
 pub mod agg1m;
+pub mod trades;
 
 use chrono::{Duration, NaiveDate};
 use zdb::calendar::us_equity::is_market_open;
