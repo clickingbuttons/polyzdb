@@ -77,7 +77,6 @@ fn download_agg1m_month(
     }
   );
 
-  let to = to - Duration::days(1); // Polygon is inclusive of last day
   println!(
     "{}: Downloading candles for {} symbols",
     month_format,
@@ -155,6 +154,7 @@ fn download_agg1m_month(
   }
   println!("{}: Flushing {} candles", month_format, num_candles);
   agg1m.flush();
+  assert_eq!(agg1m.cur_partition_meta.row_count, num_candles);
 
   println!(
     "{}: downloaded in {}s",

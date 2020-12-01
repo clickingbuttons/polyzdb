@@ -1,5 +1,5 @@
 extern crate polygon_io;
-use crate::zdb::MarketDays;
+use crate::util::MarketDays;
 use chrono::{Duration, NaiveDate, Utc};
 use polygon_io::{
   client::Client,
@@ -108,6 +108,7 @@ fn download_trades_day(
 
   println!("{}: Writing {} trades", date, num_trades);
   for t in trades.iter() {
+    println!("{}", t.ts);
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
@@ -118,6 +119,8 @@ fn download_trades_day(
   }
   println!("{}: Flushing {} trades", date, num_trades);
   trades_table.flush();
+  assert_eq!(trades_table.cur_partition_meta.row_count, num_trades);
+  assert_eq!(trades_table.partition_meta.get(&date.to_string()).unwrap().row_count, num_trades);
 
   println!(
     "{}: downloaded in {}s",
@@ -141,28 +144,15 @@ pub fn download_trades(thread_pool: &ThreadPool, client: Arc<Client>) {
     ])
     .partition_by(PartitionBy::Day);
 
-  // let from = NaiveDate::from_ymd(2004, 01, 01);
-  // let to   = NaiveDate::from_ymd(2004, 03, 01);
-  // println!("{} {}", from, to);
-  // agg1d.scan(
-  //   from.and_hms(0, 0, 0).timestamp_nanos(),
-  //   to.and_hms(0, 0, 0).timestamp_nanos(),
-  //   vec!["ts", "sym"],
-  //   |row| {
-  //     // println!("{:?}", row);
-  //     if row[1].get_symbol() == "RHT" {
-  //       println!("{}", row[0].get_timestamp());
-  //     }
-  //   }
-  // );
   let mut trades = Table::create_or_open(schema).expect("Could not open table");
   let from = match trades.get_last_ts() {
     Some(ts) => {
-      (ts.to_naive_date_time() + Duration::days(1)).date()
+      ts.to_naive_date_time().date() + Duration::days(1)
     },
     None => NaiveDate::from_ymd(2004, 1, 1)
   };
   let to = Utc::now().naive_utc().date();
+  println!("{} - {}", from, to);
   for day in (MarketDays { from, to }) {
     println!("Downloading {}", day);
     download_trades_day(

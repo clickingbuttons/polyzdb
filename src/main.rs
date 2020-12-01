@@ -1,4 +1,7 @@
-mod zdb;
+mod agg1d;
+mod agg1m;
+mod trades;
+mod util;
 
 use polygon_io::client::Client;
 use std::{panic, process, sync::Arc};
@@ -6,7 +9,9 @@ use threadpool::ThreadPool;
 // use chrono::NaiveDate;
 // use ::zdb::table::Table;
 
-use crate::zdb::{agg1d::download_agg1d, agg1m::download_agg1m, trades::download_trades};
+use agg1d::download_agg1d;
+use agg1m::download_agg1m;
+use trades::download_trades;
 
 fn main() {
   let config = Arc::new(Client::new());

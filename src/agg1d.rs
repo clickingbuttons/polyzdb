@@ -1,4 +1,4 @@
-use crate::zdb::MarketDays;
+use crate::util::MarketDays;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use polygon_io::{
   client::Client,
@@ -30,7 +30,7 @@ fn download_agg1d_year(
       .get_last_ts()
       .unwrap_or(0)
       .to_naive_date_time()
-      .date(),
+      .date() + Duration::days(1),
     NaiveDate::from_ymd(year, 1, 1)
   );
   let to = cmp::min(
