@@ -108,7 +108,6 @@ fn download_trades_day(
 
   println!("{}: Writing {} trades", date, num_trades);
   for t in trades.iter() {
-    println!("{}", t.ts);
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
@@ -141,6 +140,16 @@ pub fn download_trades(thread_pool: &ThreadPool, client: Arc<Client>) {
       Column::new("price", ColumnType::CURRENCY),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
+    ])
+    .data_dirs(vec![
+      "/mnt/ssd1",
+      "/mnt/ssd2",
+      "/mnt/ssd3",
+      "/mnt/ssd4",
+      "/mnt/ssd5",
+      "/mnt/ssd6",
+      "/mnt/ssd7",
+      "/mnt/ssd8",
     ])
     .partition_by(PartitionBy::Day);
 

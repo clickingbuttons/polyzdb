@@ -202,7 +202,8 @@ pub fn download_agg1m(thread_pool: &ThreadPool, client: Arc<Client>) {
     },
     None => NaiveDate::from_ymd(2004, 1, 1)
   };
-  let to = Utc::now().naive_utc().date();
+  let today = Utc::now().naive_utc().date();
+  let to = NaiveDate::from_ymd(today.year(), today.month(), 1);
   let mut iter = from.clone();
   while iter < to {
     println!("Downloading {}-{:02}", iter.year(), iter.month());
