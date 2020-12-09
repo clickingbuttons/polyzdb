@@ -12,7 +12,6 @@ use std::{
   io::ErrorKind,
   process,
   sync::{Arc, Mutex},
-  thread,
   time::Instant
 };
 use threadpool::ThreadPool;
@@ -21,6 +20,8 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
+use ratelimit::Handle;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn add_month(date: &NaiveDate) -> NaiveDate {
   let mut to_year = date.year();
@@ -39,6 +40,7 @@ fn download_agg1m_month(
   year: i32,
   month: u32,
   thread_pool: &ThreadPool,
+  ratelimit: &mut Handle,
   agg1d: &Table,
   agg1m: &mut Table,
   client: Arc<Client>
@@ -60,6 +62,10 @@ fn download_agg1m_month(
     month_start
   );
   let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
+  if from >= to {
+    println!("Already downloaded!");
+    return;
+  }
   let month_format = format!("{}-{:02}", year, month);
   println!(
     "{}: Scanning agg1d for symbols in {}..{}",
@@ -83,21 +89,26 @@ fn download_agg1m_month(
     symbols.len()
   );
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
-  for (i, sym) in symbols.iter().enumerate() {
+  let counter = Arc::new(AtomicUsize::new(0));
+  let num_syms = symbols.len();
+  println!("{:5} / {:5} symbols", 0, num_syms);
+  for sym in symbols.iter() {
     let month_format = month_format.clone();
     let sym = sym.clone();
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
-    let params = AggsParams::new().with_adjusted(false).with_limit(50_000).params;
+    let mut ratelimit = ratelimit.clone();
+    let params = AggsParams::new().with_unadjusted(true).with_limit(50_000).params;
+    let counter = counter.clone();
     thread_pool.execute(move || {
-      // Have 2/3 sleep for 1-2s to avoid spamming at start
-      thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
-      // Retry up to 10 times
-      for j in 0..10 {
+      // Retry up to 50 times
+      for j in 0..50 {
+        ratelimit.wait();
         match client.get_aggs(&sym, 1, Timespan::Minute, from, to, Some(&params)) {
           Ok(mut resp) => {
-            // println!("{} {:6}: {} candles", month_format, sym, candles.len());
             candles_year.lock().unwrap().append(&mut resp.results);
+            counter.fetch_add(1, Ordering::Relaxed);
+            println!("\x1b[1A\x1b[K{:5} / {:5} symbols [{}]", counter.load(Ordering::Relaxed), num_syms, sym);
             return;
           }
           Err(e) => {
@@ -115,11 +126,11 @@ fn download_agg1m_month(
                   j + 1,
                   e.to_string()
                 );
+                std::thread::sleep(std::time::Duration::from_secs(j + 1));
               }
             }
           }
         }
-        thread::sleep(std::time::Duration::from_secs(j));
       }
       eprintln!("{} {:6}: failure", month_format, sym);
       process::exit(1);
@@ -163,7 +174,7 @@ fn download_agg1m_month(
   )
 }
 
-pub fn download_agg1m(thread_pool: &ThreadPool, client: Arc<Client>) {
+pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in agg1m");
@@ -211,6 +222,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, client: Arc<Client>) {
       iter.year(),
       iter.month(),
       &thread_pool,
+      ratelimit,
       &agg1d,
       &mut agg1m,
       client.clone()

@@ -8,7 +8,6 @@ use polygon_io::{
 use std::{
   cmp, process,
   sync::{Arc, Mutex},
-  thread,
   time::Instant
 };
 use threadpool::ThreadPool;
@@ -17,10 +16,13 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
+use ratelimit::Handle;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn download_agg1d_year(
   year: i32,
   thread_pool: &ThreadPool,
+  ratelimit: &mut Handle,
   agg1d: &mut Table,
   client: Arc<Client>
 ) {
@@ -37,29 +39,40 @@ fn download_agg1d_year(
     NaiveDate::from_ymd(year + 1, 1, 1),
     Utc::now().naive_utc().date() - Duration::days(1)
   );
+  if from >= to {
+    println!("Already downloaded!");
+    return;
+  }
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
 
   println!("Downloading agg1d in {}..{}", from, to);
-  for (i, day) in (MarketDays { from, to }).enumerate() {
+  let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
+  let num_days = market_days.len();
+  let counter = Arc::new(AtomicUsize::new(0));
+  println!("{:3} / {} days", 0, num_days);
+  for day in market_days.into_iter() {
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
     let grouped_params = GroupedParams::new().with_unadjusted(true).params;
+    let mut ratelimit = ratelimit.clone();
+    let counter = counter.clone();
     thread_pool.execute(move || {
-      // Have 2/3 sleep for 1-2s to avoid spamming at start
-      thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
       // Retry up to 10 times
       for j in 0..10 {
+        ratelimit.wait();
         match client.get_grouped(Locale::US, Market::Stocks, day, Some(&grouped_params)) {
           Ok(mut resp) => {
             // println!("{}: {} candles", day, resp.results.len());
             candles_year.lock().unwrap().append(&mut resp.results);
+            counter.fetch_add(1, Ordering::Relaxed);
+            println!("\x1b[1A\x1b[K{:3} / {} days [{}]", counter.load(Ordering::Relaxed), num_days, day);
             return;
           }
           Err(e) => {
             eprintln!("{}: get_grouped retry {}: {}", day, j + 1, e.to_string());
+            std::thread::sleep(std::time::Duration::from_secs(j + 1));
           }
         }
-        thread::sleep(std::time::Duration::from_secs(j));
       }
       eprintln!("{}: failure", &day);
       process::exit(1);
@@ -103,7 +116,7 @@ fn download_agg1d_year(
   println!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
-pub fn download_agg1d(thread_pool: &ThreadPool, client: Arc<Client>) {
+pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
   // Setup DB
   let schema = Schema::new("agg1d")
     .add_cols(vec![
@@ -124,6 +137,6 @@ pub fn download_agg1d(thread_pool: &ThreadPool, client: Arc<Client>) {
   };
   let to = (Utc::now().date() - Duration::days(1)).year();
   for i in from..=to {
-    download_agg1d_year(i, &thread_pool, &mut agg1d, client.clone());
+    download_agg1d_year(i, &thread_pool, ratelimit, &mut agg1d, client.clone());
   }
 }

@@ -10,7 +10,6 @@ use std::{
   io::ErrorKind,
   process,
   sync::{Arc, Mutex},
-  thread,
   time::Instant
 };
 use threadpool::ThreadPool;
@@ -19,10 +18,13 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
+use ratelimit::Handle;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn download_trades_day(
   date: NaiveDate,
   thread_pool: &ThreadPool,
+  ratelimit: &mut Handle,
   agg1d: &Table,
   trades_table: &mut Table,
   client: Arc<Client>
@@ -49,26 +51,31 @@ fn download_trades_day(
     symbols.len()
   );
   let trades = Arc::new(Mutex::new(Vec::<Trade>::new()));
-  for (i, sym) in symbols.iter().enumerate() {
+  let counter = Arc::new(AtomicUsize::new(0));
+  let num_syms = symbols.len();
+  println!("{:5} / {:5} symbols", 0, num_syms);
+  for sym in symbols.iter() {
     let day_format = date.clone();
     let sym = sym.clone();
     let trades_day = Arc::clone(&trades);
     let client = client.clone();
+    let mut ratelimit = ratelimit.clone();
     let params = TradesParams::new().with_limit(50_000).params;
+    let counter = counter.clone();
     thread_pool.execute(move || {
-      // Have 2/3 sleep for 1-2s to avoid spamming at start
-      thread::sleep(std::time::Duration::from_secs(i as u64 % 3));
-      // Retry up to 10 times
-      for j in 0..10 {
+      // Retry up to 50 times
+      for j in 0..50 {
+        ratelimit.wait();
         match client.get_trades(&sym, date, Some(&params)) {
           Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
             trades_day.lock().unwrap().append(&mut resp.results);
+            counter.fetch_add(1, Ordering::Relaxed);
+            println!("\x1b[1A\x1b[K{:5} / {:5} symbols [{}]", counter.load(Ordering::Relaxed), num_syms, sym);
             return;
           }
           Err(e) => {
             match e.kind() {
-              // Give up if there's no data. We'll get the ticks later.
               ErrorKind::UnexpectedEof => {
                 eprintln!("{} {:6}: No data", day_format, sym);
                 return;
@@ -81,11 +88,11 @@ fn download_trades_day(
                   j + 1,
                   e.to_string()
                 );
+                std::thread::sleep(std::time::Duration::from_secs(j + 1));
               }
             }
           }
         }
-        thread::sleep(std::time::Duration::from_secs(j));
       }
       eprintln!("{} {:6}: failure", day_format, sym);
       process::exit(1);
@@ -128,7 +135,7 @@ fn download_trades_day(
   )
 }
 
-pub fn download_trades(thread_pool: &ThreadPool, client: Arc<Client>) {
+pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
@@ -140,16 +147,6 @@ pub fn download_trades(thread_pool: &ThreadPool, client: Arc<Client>) {
       Column::new("price", ColumnType::CURRENCY),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
-    ])
-    .data_dirs(vec![
-      "/mnt/ssd1",
-      "/mnt/ssd2",
-      "/mnt/ssd3",
-      "/mnt/ssd4",
-      "/mnt/ssd5",
-      "/mnt/ssd6",
-      "/mnt/ssd7",
-      "/mnt/ssd8",
     ])
     .partition_by(PartitionBy::Day);
 
@@ -167,6 +164,7 @@ pub fn download_trades(thread_pool: &ThreadPool, client: Arc<Client>) {
     download_trades_day(
       day,
       &thread_pool,
+      ratelimit,
       &agg1d,
       &mut trades,
       client.clone()

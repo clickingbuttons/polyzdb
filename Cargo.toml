@@ -7,7 +7,8 @@ edition = "2018"
 [dependencies]
 chrono = "0.4"
 threadpool = "1.8.1"
-polygon_io = "0.0.3"
+polygon_io = "0.0.8"
+ratelimit = "0.4.4"
 zdb = { path = "../zdb" }
 
 [profile.release]

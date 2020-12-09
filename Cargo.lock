@@ -264,9 +264,9 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
 name = "polygon_io"
-version = "0.0.3"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5924e5d765abb9b3ec31591321036abf8ad5245f8cb238653a15044e3a7e133e"
+checksum = "a4f4a97051a6a99a54291f56ef4a37c6423a263b3535fe233a27bbaacae20d6f"
 dependencies = [
  "chrono",
  "serde",
@@ -280,6 +280,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "polygon_io",
+ "ratelimit",
  "threadpool",
  "zdb",
 ]
@@ -329,6 +330,12 @@ checksum = "aa563d17ecb180e500da1cfd2b028310ac758de548efdd203e18f283af693f37"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "ratelimit"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c4777eb47471c2a42bee8b553b22b8e5c496f657dc6f8b8e29bd69662f31e7e"
 
 [[package]]
 name = "regex"
