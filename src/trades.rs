@@ -135,7 +135,7 @@ fn download_trades_day(
   )
 }
 
-pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, data_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
@@ -148,6 +148,7 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
     ])
+    .data_dirs(data_dirs)
     .partition_by(PartitionBy::Day);
 
   let mut trades = Table::create_or_open(schema).expect("Could not open table");

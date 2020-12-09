@@ -174,7 +174,7 @@ fn download_agg1m_month(
   )
 }
 
-pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, data_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in agg1m");
@@ -189,6 +189,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
       Column::new("volume", ColumnType::U64),
       Column::new("close_un", ColumnType::CURRENCY),
     ])
+    .data_dirs(data_dirs)
     .partition_by(PartitionBy::Month);
 
   // let from = NaiveDate::from_ymd(2004, 01, 01);

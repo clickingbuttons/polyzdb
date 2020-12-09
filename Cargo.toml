@@ -3,9 +3,11 @@ name = "polyzdb"
 version = "0.1.0"
 authors = ["clickingbuttons"]
 edition = "2018"
+description = "CLI to download polygon.io data to zdb"
 
 [dependencies]
 chrono = "0.4"
+clap = "2.33.3"
 threadpool = "1.8.1"
 polygon_io = "0.0.8"
 ratelimit = "0.4.4"
