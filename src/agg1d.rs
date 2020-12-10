@@ -40,7 +40,7 @@ fn download_agg1d_year(
     Utc::now().naive_utc().date() - Duration::days(1)
   );
   if from >= to {
-    println!("Already downloaded!");
+    eprintln!("Already downloaded!");
     return;
   }
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
@@ -82,7 +82,7 @@ fn download_agg1d_year(
   // Sort by ts, symbol
   let mut candles = candles.lock().unwrap();
   let num_candles = candles.len();
-  println!("{}: Sorting {} candles", year, num_candles);
+  eprintln!("{}: Sorting {} candles", year, num_candles);
   candles.sort_unstable_by(|c1, c2| {
     if c1.ts == c2.ts {
       c1.symbol.cmp(&c2.symbol)
@@ -90,13 +90,13 @@ fn download_agg1d_year(
       c1.ts.cmp(&c2.ts)
     }
   });
-  println!("{}: Writing {} candles", year, num_candles);
+  eprintln!("{}: Writing {} candles", year, num_candles);
   for c in candles.drain(..) {
     // Filter out crazy tickers
     // https://github.com/polygon-io/issues/issues/3
     if !c.symbol.chars().all(|c| c.is_ascii_graphic()) {
       let date = c.ts.to_naive_date_time().date();
-      println!("{}: Bad symbol {}", date, c.symbol);
+      eprintln!("{}: Bad symbol {}", date, c.symbol);
       continue;
     }
     agg1d.put_timestamp(c.ts);
@@ -109,10 +109,10 @@ fn download_agg1d_year(
     agg1d.put_currency(c.close);
     agg1d.write();
   }
-  println!("{}: Flushing {} candles", year, num_candles);
+  eprintln!("{}: Flushing {} candles", year, num_candles);
   agg1d.flush();
 
-  println!("{}: done in {}s", year, now.elapsed().as_secs());
+  eprintln!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
 pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {

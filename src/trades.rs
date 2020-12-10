@@ -31,7 +31,7 @@ fn download_trades_day(
 ) {
   let now = Instant::now();
   let from = date.clone();
-  println!(
+  eprintln!(
     "{}: Scanning agg1d for symbols",
     date
   );
@@ -45,7 +45,7 @@ fn download_trades_day(
     }
   );
 
-  println!(
+  eprintln!(
     "{}: Downloading trades for {} symbols",
     date,
     symbols.len()
@@ -104,7 +104,7 @@ fn download_trades_day(
   let mut trades = trades.lock().unwrap();
   let num_trades = trades.len();
   // Sort by ts, symbol
-  println!("{}: Sorting {} trades", date, num_trades);
+  eprintln!("{}: Sorting {} trades", date, num_trades);
   trades.sort_unstable_by(|c1, c2| {
     if c1.ts == c2.ts {
       c1.symbol.cmp(&c2.symbol)
@@ -113,7 +113,7 @@ fn download_trades_day(
     }
   });
 
-  println!("{}: Writing {} trades", date, num_trades);
+  eprintln!("{}: Writing {} trades", date, num_trades);
   for t in trades.iter() {
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
@@ -123,12 +123,12 @@ fn download_trades_day(
     trades_table.put_u8(t.tape);
     trades_table.write();
   }
-  println!("{}: Flushing {} trades", date, num_trades);
+  eprintln!("{}: Flushing {} trades", date, num_trades);
   trades_table.flush();
   assert_eq!(trades_table.cur_partition_meta.row_count, num_trades);
   assert_eq!(trades_table.partition_meta.get(&date.to_string()).unwrap().row_count, num_trades);
 
-  println!(
+  eprintln!(
     "{}: downloaded in {}s",
     date,
     now.elapsed().as_secs()
@@ -159,9 +159,8 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
     None => NaiveDate::from_ymd(2004, 1, 1)
   };
   let to = Utc::now().naive_utc().date();
-  println!("{} - {}", from, to);
   for day in (MarketDays { from, to }) {
-    println!("Downloading {}", day);
+    eprintln!("Downloading {}", day);
     download_trades_day(
       day,
       &thread_pool,

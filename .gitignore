@@ -2,4 +2,5 @@
 /data*
 /logs
 polygon.json
+*.log
 

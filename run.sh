@@ -7,4 +7,5 @@
 	-d /mnt/ssd5 \
 	-d /mnt/ssd6 \
 	-d /mnt/ssd7 \
-	-d /mnt/ssd8
+	-d /mnt/ssd8 \
+  2> >(tee 01.log)

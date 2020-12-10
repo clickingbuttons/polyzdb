@@ -77,17 +77,17 @@ fn main() {
   let download_all = !matches.is_present("agg1d") && !matches.is_present("agg1m") && !matches.is_present("trades");
 
   if download_all || matches.is_present("agg1d") {
-    println!("Downloading agg1d index data using dirs [\"data\"]");
+    eprintln!("Downloading agg1d index data using dirs [\"data\"]");
     download_agg1d(&thread_pool, &mut handle, client.clone());
   }
 
   let data_dirs = matches.values_of("data-dir").unwrap().into_iter().collect::<Vec<&str>>();
   if download_all || matches.is_present("agg1m") {
-    println!("Downloading agg1m data using dirs {:?}", data_dirs);
+    eprintln!("Downloading agg1m data using dirs {:?}", data_dirs);
     download_agg1m(&thread_pool, &mut handle, client.clone(), data_dirs.clone());
   }
   if download_all || matches.is_present("trades") {
-    println!("Downloading trade data using dirs {:?}", data_dirs);
+    eprintln!("Downloading trade data using dirs {:?}", data_dirs);
     download_trades(&thread_pool, &mut handle, client.clone(), data_dirs);
   }
 }

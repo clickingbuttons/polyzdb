@@ -63,11 +63,11 @@ fn download_agg1m_month(
   );
   let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
   if from >= to {
-    println!("Already downloaded!");
+    eprintln!("Already downloaded!");
     return;
   }
   let month_format = format!("{}-{:02}", year, month);
-  println!(
+  eprintln!(
     "{}: Scanning agg1d for symbols in {}..{}",
     month_format, from, to
   );
@@ -83,7 +83,7 @@ fn download_agg1m_month(
     }
   );
 
-  println!(
+  eprintln!(
     "{}: Downloading candles for {} symbols",
     month_format,
     symbols.len()
@@ -142,7 +142,7 @@ fn download_agg1m_month(
   let mut candles = candles.lock().unwrap();
   let num_candles = candles.len();
   // Sort by ts, symbol
-  println!("{}: Sorting {} candles", month_format, num_candles);
+  eprintln!("{}: Sorting {} candles", month_format, num_candles);
   candles.sort_unstable_by(|c1, c2| {
     if c1.ts == c2.ts {
       c1.symbol.cmp(&c2.symbol)
@@ -151,7 +151,7 @@ fn download_agg1m_month(
     }
   });
 
-  println!("{}: Writing {} candles", month_format, num_candles);
+  eprintln!("{}: Writing {} candles", month_format, num_candles);
   for c in candles.iter() {
     agg1m.put_timestamp(c.ts);
     agg1m.put_symbol(c.symbol.clone());
@@ -163,11 +163,11 @@ fn download_agg1m_month(
     agg1m.put_currency(0.0);
     agg1m.write();
   }
-  println!("{}: Flushing {} candles", month_format, num_candles);
+  eprintln!("{}: Flushing {} candles", month_format, num_candles);
   agg1m.flush();
   assert_eq!(agg1m.cur_partition_meta.row_count, num_candles);
 
-  println!(
+  eprintln!(
     "{}: downloaded in {}s",
     month_format,
     now.elapsed().as_secs()
@@ -218,7 +218,7 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   let to = NaiveDate::from_ymd(today.year(), today.month(), 1);
   let mut iter = from.clone();
   while iter < to {
-    println!("Downloading {}-{:02}", iter.year(), iter.month());
+    eprintln!("Downloading {}-{:02}", iter.year(), iter.month());
     download_agg1m_month(
       iter.year(),
       iter.month(),
