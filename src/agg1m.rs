@@ -115,12 +115,12 @@ fn download_agg1m_month(
             match e.kind() {
               // Give up if there's no data. We'll get the ticks later.
               ErrorKind::UnexpectedEof => {
-                eprintln!("{} {:6}: No data", month_format, sym);
+                eprintln!("{} {:6}: No data\n", month_format, sym);
                 return;
               }
               _ => {
                 eprintln!(
-                  "{} {:6}: get_agg1m retry {}: {}",
+                  "{} {:6}: get_agg1m retry {}: {}\n",
                   month_format,
                   sym,
                   j + 1,

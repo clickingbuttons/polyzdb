@@ -77,12 +77,12 @@ fn download_trades_day(
           Err(e) => {
             match e.kind() {
               ErrorKind::UnexpectedEof => {
-                eprintln!("{} {:6}: No data", day_format, sym);
+                eprintln!("{} {:6}: No data\n", day_format, sym);
                 return;
               }
               _ => {
                 eprintln!(
-                  "{} {:6}: get_trades retry {}: {}",
+                  "{} {:6}: get_trades retry {}: {}\n",
                   day_format,
                   sym,
                   j + 1,

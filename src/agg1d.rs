@@ -62,14 +62,13 @@ fn download_agg1d_year(
         ratelimit.wait();
         match client.get_grouped(Locale::US, Market::Stocks, day, Some(&grouped_params)) {
           Ok(mut resp) => {
-            // println!("{}: {} candles", day, resp.results.len());
             candles_year.lock().unwrap().append(&mut resp.results);
             counter.fetch_add(1, Ordering::Relaxed);
             println!("\x1b[1A\x1b[K{:3} / {} days [{}]", counter.load(Ordering::Relaxed), num_days, day);
             return;
           }
           Err(e) => {
-            eprintln!("{}: get_grouped retry {}: {}", day, j + 1, e.to_string());
+            eprintln!("{}: get_grouped retry {}: {}\n", day, j + 1, e.to_string());
             std::thread::sleep(std::time::Duration::from_secs(j + 1));
           }
         }
