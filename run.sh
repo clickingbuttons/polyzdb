@@ -1,3 +1,4 @@
+#!/bin/bash
 ./target/release/polyzdb \
 	--ratelimit 99 \
 	-d /mnt/ssd1 \
@@ -8,4 +9,4 @@
 	-d /mnt/ssd6 \
 	-d /mnt/ssd7 \
 	-d /mnt/ssd8 \
-  2> >(tee 01.log)
+  2> >(tee stderr.log)

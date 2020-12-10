@@ -91,7 +91,7 @@ fn download_agg1m_month(
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
   let counter = Arc::new(AtomicUsize::new(0));
   let num_syms = symbols.len();
-  println!("{:5} / {:5} symbols", 0, num_syms);
+  eprintln!("{:5} / {:5} symbols", 0, num_syms);
   for sym in symbols.iter() {
     let month_format = month_format.clone();
     let sym = sym.clone();

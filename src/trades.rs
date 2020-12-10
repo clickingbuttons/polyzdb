@@ -53,7 +53,7 @@ fn download_trades_day(
   let trades = Arc::new(Mutex::new(Vec::<Trade>::new()));
   let counter = Arc::new(AtomicUsize::new(0));
   let num_syms = symbols.len();
-  println!("{:5} / {:5} symbols", 0, num_syms);
+  eprintln!("{:5} / {:5} symbols", 0, num_syms);
   for sym in symbols.iter() {
     let day_format = date.clone();
     let sym = sym.clone();

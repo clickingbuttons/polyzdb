@@ -45,11 +45,11 @@ fn download_agg1d_year(
   }
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
 
-  println!("Downloading agg1d in {}..{}", from, to);
+  eprintln!("Downloading agg1d in {}..{}", from, to);
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   let num_days = market_days.len();
   let counter = Arc::new(AtomicUsize::new(0));
-  println!("{:3} / {} days", 0, num_days);
+  eprintln!("{:3} / {} days", 0, num_days);
   for day in market_days.into_iter() {
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
