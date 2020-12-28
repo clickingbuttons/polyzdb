@@ -181,13 +181,14 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   // Setup DB
   let schema = Schema::new("agg1m")
     .add_cols(vec![
-      Column::new("sym", ColumnType::SYMBOL16),
-      Column::new("open", ColumnType::CURRENCY),
-      Column::new("high", ColumnType::CURRENCY),
-      Column::new("low", ColumnType::CURRENCY),
-      Column::new("close", ColumnType::CURRENCY),
+      Column::new("ts", ColumnType::Timestamp).with_resolution(60 * 1_000_000_000),
+      Column::new("sym", ColumnType::Symbol16),
+      Column::new("open", ColumnType::Currency),
+      Column::new("high", ColumnType::Currency),
+      Column::new("low", ColumnType::Currency),
+      Column::new("close", ColumnType::Currency),
       Column::new("volume", ColumnType::U64),
-      Column::new("close_un", ColumnType::CURRENCY),
+      Column::new("close_un", ColumnType::Currency),
     ])
     .data_dirs(data_dirs)
     .partition_by(PartitionBy::Month);

@@ -142,9 +142,10 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
   // Setup DB
   let schema = Schema::new("trades")
     .add_cols(vec![
-      Column::new("sym", ColumnType::SYMBOL16),
+      Column::new("ts", ColumnType::Timestamp),
+      Column::new("sym", ColumnType::Symbol16),
       Column::new("size", ColumnType::U32),
-      Column::new("price", ColumnType::CURRENCY),
+      Column::new("price", ColumnType::Currency),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
     ])
