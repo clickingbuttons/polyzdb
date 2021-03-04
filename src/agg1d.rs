@@ -53,7 +53,7 @@ fn download_agg1d_year(
   for day in market_days.into_iter() {
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
-    let grouped_params = GroupedParams::new().with_unadjusted(true).params;
+    let grouped_params = GroupedParams::new().unadjusted(true).params;
     let mut ratelimit = ratelimit.clone();
     let counter = counter.clone();
     thread_pool.execute(move || {

@@ -3,7 +3,7 @@ use crate::util::MarketDays;
 use chrono::{Duration, NaiveDate, Utc};
 use polygon_io::{
   client::Client,
-  equities::trades::{Trade, TradesParams}
+  equities::trades::Trade
 };
 use std::{
   collections::HashSet,
@@ -36,14 +36,17 @@ fn download_trades_day(
     date
   );
   let mut symbols = HashSet::<String>::default();
-  agg1d.scan(
+  let partitions = agg1d.partition_iter(
     from.and_hms(0, 0, 0).timestamp_nanos(),
     from.and_hms(0, 0, 0).timestamp_nanos(),
-    vec!["ts", "sym"],
-    |row| {
-      symbols.insert(row[1].get_symbol().clone());
-    }
+    vec!["sym"]
   );
+  for partition in partitions {
+    for sym_index in partition[0].get_u16() {
+      let sym = partition[0].symbols[*sym_index as usize].clone();
+      symbols.insert(sym);
+    }
+  }
 
   eprintln!(
     "{}: Downloading trades for {} symbols",
@@ -60,16 +63,15 @@ fn download_trades_day(
     let trades_day = Arc::clone(&trades);
     let client = client.clone();
     let mut ratelimit = ratelimit.clone();
-    let params = TradesParams::new().with_limit(50_000).params;
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 50 times
       for j in 0..50 {
         ratelimit.wait();
-        match client.get_trades(&sym, date, Some(&params)) {
+        match client.get_all_trades(&sym, date) {
           Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
-            trades_day.lock().unwrap().append(&mut resp.results);
+            trades_day.lock().unwrap().append(&mut resp);
             counter.fetch_add(1, Ordering::Relaxed);
             println!("\x1b[1A\x1b[K{:5} / {:5} symbols [{}]", counter.load(Ordering::Relaxed), num_syms, sym);
             return;
@@ -114,7 +116,7 @@ fn download_trades_day(
   });
 
   eprintln!("{}: Writing {} trades", date, num_trades);
-  for t in trades.iter() {
+  for t in trades.drain(..) {
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
@@ -135,7 +137,7 @@ fn download_trades_day(
   )
 }
 
-pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, data_dirs: Vec<&str>) {
+pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, partition_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
@@ -149,7 +151,7 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
     ])
-    .data_dirs(data_dirs)
+    .partition_dirs(partition_dirs)
     .partition_by(PartitionBy::Day);
 
   let mut trades = Table::create_or_open(schema).expect("Could not open table");

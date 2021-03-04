@@ -72,21 +72,34 @@ fn download_agg1m_month(
     month_format, from, to
   );
   let mut symbols = HashSet::<String>::default();
-  agg1d.scan(
+  let partitions = agg1d.partition_iter(
     from.and_hms(0, 0, 0).timestamp_nanos(),
     to.and_hms(0, 0, 0).timestamp_nanos(),
     vec!["ts", "sym", "volume"],
-    |row| {
-      if row[2].get_u64() > 0 {
-        symbols.insert(row[1].get_symbol().clone());
-      }
-    }
   );
+  let mut symbols_from = from.clone();
+  let mut symbols_to = to.clone();
+  for partition in partitions {
+    let sym_indexes = partition[1].get_u16();
+    let volumes = partition[2].get_u64();
+    volumes.iter().zip(sym_indexes.iter()).for_each(|(v, sym_i)| {
+      if *v > 0 {
+        let sym = partition[1].symbols[*sym_i as usize].clone();
+        symbols.insert(sym);
+      }
+    });
+    if volumes.len() > 0 {
+      symbols_from = partition[0].get_timestamp(0).to_naive_date_time().date();
+      symbols_to = partition[0].get_timestamp(partition[0].row_count - 1).to_naive_date_time().date();
+    }
+  }
 
   eprintln!(
-    "{}: Downloading candles for {} symbols",
+    "{}: Downloading candles for {} symbols from {} to {}",
     month_format,
-    symbols.len()
+    symbols.len(),
+    symbols_from,
+    symbols_to
   );
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
   let counter = Arc::new(AtomicUsize::new(0));
@@ -98,7 +111,7 @@ fn download_agg1m_month(
     let candles_year = Arc::clone(&candles);
     let client = client.clone();
     let mut ratelimit = ratelimit.clone();
-    let params = AggsParams::new().with_unadjusted(true).with_limit(50_000).params;
+    let params = AggsParams::new().unadjusted(true).limit(50_000).params;
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 50 times
@@ -152,14 +165,14 @@ fn download_agg1m_month(
   });
 
   eprintln!("{}: Writing {} candles", month_format, num_candles);
-  for c in candles.iter() {
+  for c in candles.drain(..) {
     agg1m.put_timestamp(c.ts);
-    agg1m.put_symbol(c.symbol.clone());
+    agg1m.put_symbol(c.symbol);
     agg1m.put_currency(c.open);
     agg1m.put_currency(c.high);
     agg1m.put_currency(c.low);
     agg1m.put_currency(c.close);
-    agg1m.put_u64(c.volume);
+    agg1m.put_u32(c.volume as u32);
     agg1m.put_currency(0.0);
     agg1m.write();
   }
@@ -174,7 +187,7 @@ fn download_agg1m_month(
   )
 }
 
-pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, data_dirs: Vec<&str>) {
+pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, column_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in agg1m");
@@ -187,36 +200,23 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
       Column::new("high", ColumnType::Currency),
       Column::new("low", ColumnType::Currency),
       Column::new("close", ColumnType::Currency),
-      Column::new("volume", ColumnType::U64),
+      Column::new("volume", ColumnType::U32),
       Column::new("close_un", ColumnType::Currency),
     ])
-    .data_dirs(data_dirs)
+    .partition_dirs(column_dirs)
     .partition_by(PartitionBy::Month);
 
-  // let from = NaiveDate::from_ymd(2004, 01, 01);
-  // let to   = NaiveDate::from_ymd(2004, 03, 01);
-  // println!("{} {}", from, to);
-  // agg1d.scan(
-  //   from.and_hms(0, 0, 0).timestamp_nanos(),
-  //   to.and_hms(0, 0, 0).timestamp_nanos(),
-  //   vec!["ts", "sym"],
-  //   |row| {
-  //     // println!("{:?}", row);
-  //     if row[1].get_symbol() == "RHT" {
-  //       println!("{}", row[0].get_timestamp());
-  //     }
-  //   }
-  // );
   let mut agg1m = Table::create_or_open(schema).expect("Could not open table");
   let from = match agg1m.get_last_ts() {
     Some(ts) => {
       let last_date = ts.to_naive_date_time().date();
       NaiveDate::from_ymd(last_date.year(), last_date.month(), 1)
     },
-    None => NaiveDate::from_ymd(2004, 1, 1)
+    None => agg1d.get_first_ts().unwrap().to_naive_date_time().date()
   };
   let today = Utc::now().naive_utc().date();
   let to = NaiveDate::from_ymd(today.year(), today.month(), 1);
+  eprintln!("Downloading from {}-{:02} to {}-{:02}", from.year(), from.month(), to.year(), to.month());
   let mut iter = from.clone();
   while iter < to {
     eprintln!("Downloading {}-{:02}", iter.year(), iter.month());
