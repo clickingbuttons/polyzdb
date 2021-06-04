@@ -8,7 +8,6 @@ use polygon_io::client::Client;
 use std::{panic, process, sync::Arc, thread};
 use threadpool::ThreadPool;
 use ratelimit;
-
 use agg1d::download_agg1d;
 use tickers::download_tickers;
 use agg1m::download_agg1m;
@@ -83,22 +82,21 @@ fn main() {
   let download_all = !agg1d && !tickers && !agg1m && !trades;
 
   if download_all || agg1d {
-    eprintln!("Downloading agg1d index data using dirs [\"data\"]");
+    eprintln!("Downloading agg1d");
     download_agg1d(&thread_pool, &mut handle, client.clone());
   }
   if download_all || tickers {
-    eprintln!("Downloading daily tickers index data using dirs [\"data\"]");
+    eprintln!("Downloading tickers1d");
     download_tickers(&thread_pool, &mut handle, client.clone());
   }
 
   let data_dirs = matches.values_of("data-dir").unwrap().into_iter().collect::<Vec<&str>>();
   if download_all || agg1m {
-    eprintln!("Downloading agg1m data using dirs {:?}", data_dirs);
+    eprintln!("Downloading agg1m");
     download_agg1m(&thread_pool, &mut handle, client.clone(), data_dirs.clone());
   }
   if download_all || trades {
-    eprintln!("Downloading trade data using dirs {:?}", data_dirs);
-    download_trades(&thread_pool, &mut handle, client.clone(), data_dirs);
+    eprintln!("Downloading trade data");
+    download_trades(&thread_pool, &mut handle, client.clone(), data_dirs.clone());
   }
 }
-

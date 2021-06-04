@@ -64,7 +64,7 @@ fn download_agg1d_year(
           Ok(mut resp) => {
             candles_year.lock().unwrap().append(&mut resp.results);
             counter.fetch_add(1, Ordering::Relaxed);
-            println!("\x1b[1A\x1b[K{:3} / {} days [{}]", counter.load(Ordering::Relaxed), num_days, day);
+            println!("\x1b[1A\x1b[K{:3} / {} days [{}, {}]", counter.load(Ordering::Relaxed), num_days, day, resp.results_count);
             return;
           }
           Err(e) => {

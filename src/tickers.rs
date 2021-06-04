@@ -44,7 +44,7 @@ fn download_tickers_year(
   }
   let tickers_year = Arc::new(Mutex::new(Vec::<TickerVx>::new()));
 
-  eprintln!("Downloading tickers in {}..{}", from, to);
+  eprintln!("Downloading tickers1d in {}..{}", from, to);
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   let num_days = market_days.len();
   let counter = Arc::new(AtomicUsize::new(0));
@@ -58,13 +58,14 @@ fn download_tickers_year(
       // Retry up to 10 times
       for j in 0..10 {
         ratelimit.wait();
-        match client.get_all_tickers_vx(day) {
+        match client.get_all_tickers_vx(&day) {
           Ok(mut results) => {
             for ticker in results.iter_mut() {
               // Hijack this mostly useless field to put current date
               ticker.last_updated_utc = FixedOffset::east(0)
                 .ymd(day.year(), day.month(), day.day())
                 .and_hms(0, 0, 0);
+              assert!(ticker.last_updated_utc.timestamp_nanos() == day.and_hms(0, 0, 0).timestamp_nanos());
             }
             tickers_year.lock().unwrap().append(&mut results);
             counter.fetch_add(1, Ordering::Relaxed);
@@ -101,7 +102,8 @@ fn download_tickers_year(
     tickers.put_symbol(c.name);
     tickers.put_symbol(c.primary_exchange.unwrap_or(String::new()));
     tickers.put_symbol(c.r#type.unwrap_or(String::new()));
-    tickers.put_symbol(c.currency_name);
+    assert!(c.currency_name.is_some());
+    tickers.put_symbol(c.currency_name.unwrap_or(String::new()));
     tickers.put_symbol(c.cik.unwrap_or(String::new()));
     tickers.put_symbol(c.composite_figi.unwrap_or(String::new()));
     tickers.put_symbol(c.share_class_figi.unwrap_or(String::new()));
@@ -115,7 +117,7 @@ fn download_tickers_year(
 
 pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
   // Setup DB
-  let schema = Schema::new("tickers")
+  let schema = Schema::new("tickers1d")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(24 * 60 * 60 * 1_000_000_000),
       Column::new("sym", ColumnType::Symbol16),
@@ -127,7 +129,7 @@ pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client
       Column::new("composite_figi", ColumnType::Symbol16),
       Column::new("share_class_figi", ColumnType::Symbol16),
     ])
-    .partition_by(PartitionBy::Year);
+    .partition_by(PartitionBy::Day);
 
   let mut tickers = Table::create_or_open(schema).expect("Could not open table");
   let from = match tickers.get_last_ts() {
