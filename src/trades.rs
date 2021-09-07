@@ -1,52 +1,39 @@
 extern crate polygon_io;
 use crate::util::MarketDays;
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use polygon_io::{
   client::Client,
   equities::trades::Trade
 };
 use std::{
-  collections::HashSet,
   io::ErrorKind,
   process,
   sync::{Arc, Mutex},
   time::Instant
 };
 use threadpool::ThreadPool;
-use zdb::{
-  calendar::ToNaiveDateTime,
-  schema::{Column, ColumnType, PartitionBy, Schema},
-  table::Table
-};
 use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::Path;
+
+fn lines_from_file<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
 
 fn download_trades_day(
   date: NaiveDate,
   thread_pool: &ThreadPool,
   ratelimit: &mut Handle,
-  agg1d: &Table,
-  trades_table: &mut Table,
   client: Arc<Client>
 ) {
   let now = Instant::now();
-  let from = date.clone();
-  eprintln!(
-    "{}: Scanning agg1d for symbols",
-    date
-  );
-  let mut symbols = HashSet::<String>::default();
-  let partitions = agg1d.partition_iter(
-    from.and_hms(0, 0, 0).timestamp_nanos(),
-    from.and_hms(0, 0, 0).timestamp_nanos(),
-    vec!["sym"]
-  );
-  for partition in partitions {
-    for sym_index in partition[0].get_u16() {
-      let sym = partition[0].symbols[*sym_index as usize].clone();
-      symbols.insert(sym);
-    }
-  }
+  let symbols = lines_from_file("tickers.txt").unwrap().map(|l| l.unwrap()).collect::<Vec<String>>();
 
   eprintln!(
     "{}: Downloading trades for {} symbols",
@@ -79,7 +66,6 @@ fn download_trades_day(
           Err(e) => {
             match e.kind() {
               ErrorKind::UnexpectedEof => {
-                eprintln!("{} {:6}: No data\n", day_format, sym);
                 return;
               }
               _ => {
@@ -116,23 +102,6 @@ fn download_trades_day(
   });
 
   eprintln!("{}: Writing {} trades", date, num_trades);
-  for t in trades.drain(..) {
-    trades_table.put_timestamp(t.ts);
-    trades_table.put_symbol(t.symbol.clone());
-    trades_table.put_u32(t.size);
-    trades_table.put_currency(t.price as f32);
-    trades_table.put_f64(t.price);
-    trades_table.put_u32(t.conditions);
-    trades_table.put_u8(t.exchange);
-    trades_table.put_u8(t.tape);
-    trades_table.put_u64(t.uid);
-    trades_table.write();
-  }
-  eprintln!("{}: Flushing {} trades", date, num_trades);
-  trades_table.flush();
-  assert_eq!(trades_table.cur_partition_meta.row_count, num_trades);
-  assert_eq!(trades_table.partition_meta.get(&date.to_string()).unwrap().row_count, num_trades);
-
   eprintln!(
     "{}: downloaded in {}s",
     date,
@@ -140,33 +109,8 @@ fn download_trades_day(
   )
 }
 
-pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, partition_dirs: Vec<&str>) {
-  // Get existing symbols
-  let agg1d =
-    Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
-  // Setup DB
-  let schema = Schema::new("trades2")
-    .add_cols(vec![
-      Column::new("ts", ColumnType::Timestamp),
-      Column::new("sym", ColumnType::Symbol16),
-      Column::new("size", ColumnType::U32),
-      Column::new("price", ColumnType::Currency),
-      Column::new("price_f64", ColumnType::F64),
-      Column::new("conditions", ColumnType::U32),
-      Column::new("exchange", ColumnType::U8),
-      Column::new("tape", ColumnType::U8),
-      Column::new("uid", ColumnType::U64),
-    ])
-    .partition_dirs(partition_dirs)
-    .partition_by(PartitionBy::Day);
-
-  let mut trades = Table::create_or_open(schema).expect("Could not open table");
-  let from = match trades.get_last_ts() {
-    Some(ts) => {
-      ts.to_naive_date_time().date() + Duration::days(1)
-    },
-    None => NaiveDate::from_ymd(2004, 1, 1)
-  };
+pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+  let from = NaiveDate::from_ymd(2004, 1, 1);
   let to = Utc::now().naive_utc().date();
   for day in (MarketDays { from, to }) {
     eprintln!("Downloading {}", day);
@@ -174,8 +118,6 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
       day,
       &thread_pool,
       ratelimit,
-      &agg1d,
-      &mut trades,
       client.clone()
     );
   }

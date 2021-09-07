@@ -9,9 +9,8 @@ description = "CLI to download polygon.io data to zdb"
 chrono = "0.4"
 clap = "2.33.3"
 threadpool = "1.8.1"
-polygon_io = { path = "../polygon_io" }
+polygon_io = "2.0.1"
 ratelimit = "0.4.4"
-zdb = { path = "../zdb" }
 
 [profile.release]
 debug = true
