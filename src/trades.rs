@@ -66,6 +66,7 @@ fn download_trades_day(
           Err(e) => {
             match e.kind() {
               ErrorKind::UnexpectedEof => {
+                counter.fetch_add(1, Ordering::Relaxed);
                 return;
               }
               _ => {
