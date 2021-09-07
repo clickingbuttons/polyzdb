@@ -3,7 +3,6 @@ mod tickers;
 mod agg1m;
 mod trades;
 mod util;
-
 use polygon_io::client::Client;
 use std::{panic, process, sync::Arc, thread};
 use threadpool::ThreadPool;

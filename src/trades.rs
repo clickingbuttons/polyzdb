@@ -120,9 +120,12 @@ fn download_trades_day(
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
-    trades_table.put_currency(t.price);
+    trades_table.put_currency(t.price as f32);
+    trades_table.put_f64(t.price);
+    trades_table.put_u32(t.conditions);
     trades_table.put_u8(t.exchange);
     trades_table.put_u8(t.tape);
+    trades_table.put_u64(t.uid);
     trades_table.write();
   }
   eprintln!("{}: Flushing {} trades", date, num_trades);
@@ -142,14 +145,17 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
   // Setup DB
-  let schema = Schema::new("trades")
+  let schema = Schema::new("trades2")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp),
       Column::new("sym", ColumnType::Symbol16),
       Column::new("size", ColumnType::U32),
       Column::new("price", ColumnType::Currency),
+      Column::new("price_f64", ColumnType::F64),
+      Column::new("conditions", ColumnType::U32),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
+      Column::new("uid", ColumnType::U64),
     ])
     .partition_dirs(partition_dirs)
     .partition_by(PartitionBy::Day);
