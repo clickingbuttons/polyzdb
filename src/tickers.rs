@@ -26,25 +26,22 @@ fn download_tickers_year(
   client: Arc<Client>
 ) {
   let now = Instant::now();
-  let from = cmp::max(
-    tickers
-      .get_last_ts()
-      .unwrap_or(0)
-      .to_naive_date_time()
-      .date() + Duration::days(1),
-    NaiveDate::from_ymd(year, 1, 1)
-  );
+  let from = match tickers.partition_meta.get(&year.to_string()) {
+    Some(meta) => meta.to_ts.to_naive_date_time().date() + Duration::days(1),
+    None => NaiveDate::from_ymd(year, 1, 1)
+  };
   let to = cmp::min(
     NaiveDate::from_ymd(year + 1, 1, 1),
-    Utc::now().naive_utc().date() - Duration::days(1)
+    Utc::now().naive_utc().date()
   );
-  if from >= to {
-    eprintln!("Already downloaded!");
+  let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
+  if from >= to || market_days.len() == 0 {
+    eprintln!("Already downloaded {}!", year);
     return;
   }
-  let tickers_year = Arc::new(Mutex::new(Vec::<TickerVx>::new()));
 
-  eprintln!("Downloading tickers1d in {}..{}", from, to);
+  let tickers_year = Arc::new(Mutex::new(Vec::<TickerVx>::new()));
+  eprintln!("Downloading tickers in {}..{}", from, to);
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   let num_days = market_days.len();
   let counter = Arc::new(AtomicUsize::new(0));
@@ -116,8 +113,9 @@ fn download_tickers_year(
 }
 
 pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+  let now = Instant::now();
   // Setup DB
-  let schema = Schema::new("tickers1d")
+  let schema = Schema::new("tickers")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(24 * 60 * 60 * 1_000_000_000),
       Column::new("sym", ColumnType::Symbol16),
@@ -129,15 +127,14 @@ pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client
       Column::new("composite_figi", ColumnType::Symbol16),
       Column::new("share_class_figi", ColumnType::Symbol16),
     ])
-    .partition_by(PartitionBy::Day);
+    .partition_by(PartitionBy::Year);
 
   let mut tickers = Table::create_or_open(schema).expect("Could not open table");
-  let from = match tickers.get_last_ts() {
-    Some(ts) => ts.to_naive_date_time().date().year(),
-    None => 2004
-  };
+  let from = 2004;
   let to = (Utc::now().date() - Duration::days(1)).year();
-  for i in from..=to {
+  eprintln!("Downloading tickers");
+  for i in (from..=to).rev() {
     download_tickers_year(i, &thread_pool, ratelimit, &mut tickers, client.clone());
   }
+  eprintln!("Downloaded tickers in {}s", now.elapsed().as_secs());
 }

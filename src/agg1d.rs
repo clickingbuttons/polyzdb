@@ -27,26 +27,22 @@ fn download_agg1d_year(
   client: Arc<Client>
 ) {
   let now = Instant::now();
-  let from = cmp::max(
-    agg1d
-      .get_last_ts()
-      .unwrap_or(0)
-      .to_naive_date_time()
-      .date() + Duration::days(1),
-    NaiveDate::from_ymd(year, 1, 1)
-  );
+  let from = match agg1d.partition_meta.get(&year.to_string()) {
+    Some(meta) => meta.to_ts.to_naive_date_time().date() + Duration::days(1),
+    None => NaiveDate::from_ymd(year, 1, 1)
+  };
   let to = cmp::min(
     NaiveDate::from_ymd(year + 1, 1, 1),
-    Utc::now().naive_utc().date() - Duration::days(1)
+    Utc::now().naive_utc().date()
   );
-  if from >= to {
-    eprintln!("Already downloaded!");
+  let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
+  if from >= to || market_days.len() == 0 {
+    eprintln!("Already downloaded {}!", year);
     return;
   }
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
 
   eprintln!("Downloading agg1d in {}..{}", from, to);
-  let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   let num_days = market_days.len();
   let counter = Arc::new(AtomicUsize::new(0));
   eprintln!("{:3} / {} days", 0, num_days);
@@ -116,6 +112,7 @@ fn download_agg1d_year(
 }
 
 pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+  let now = Instant::now();
   // Setup DB
   let schema = Schema::new("agg1d")
     .add_cols(vec![
@@ -131,12 +128,11 @@ pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
     .partition_by(PartitionBy::Year);
 
   let mut agg1d = Table::create_or_open(schema).expect("Could not open table");
-  let from = match agg1d.get_last_ts() {
-    Some(ts) => ts.to_naive_date_time().date().year(),
-    None => 2004
-  };
+  let from = 2004;
   let to = (Utc::now().date() - Duration::days(1)).year();
-  for i in from..=to {
+  eprintln!("Downloading agg1d");
+  for i in (from..=to).rev() {
     download_agg1d_year(i, &thread_pool, ratelimit, &mut agg1d, client.clone());
   }
+  eprintln!("Downloaded agg1d in {}s", now.elapsed().as_secs());
 }

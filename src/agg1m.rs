@@ -36,6 +36,20 @@ fn add_month(date: &NaiveDate) -> NaiveDate {
   NaiveDate::from_ymd(to_year, to_month, date.day())
 }
 
+
+fn sub_month(date: &NaiveDate) -> NaiveDate {
+  let mut to_year = date.year();
+  let mut to_month = date.month();
+  if to_month == 1 {
+    to_month = 12;
+    to_year -= 1;
+  } else {
+    to_month -= 1;
+  }
+
+  NaiveDate::from_ymd(to_year, to_month, date.day())
+}
+
 fn download_agg1m_month(
   year: i32,
   month: u32,
@@ -48,25 +62,20 @@ fn download_agg1m_month(
   // The US equity market is open from 4:00-20:00 which is 960 minutes.
   // We could download up to 50k bars/request with &limit=50000, which is 52 days.
   // However, Polygon recommends downloading a month at a time.
-  // Humans think in months much better than 52 day periods, so I'm inclined to
+  // Humans think in months better than 52 day periods, so I'm inclined to
   // go with months for now.
   let now = Instant::now();
+  let month_format = format!("{}-{:02}", year, month);
+  let from = match agg1m.partition_meta.get(&month_format) {
+    Some(meta) => meta.to_ts.to_naive_date_time().date() + Duration::days(1),
+    None => NaiveDate::from_ymd(year, month, 1)
+  };
   let month_start = NaiveDate::from_ymd(year, month, 1);
-  let from = cmp::max(
-    agg1m
-      .get_last_ts()
-      .unwrap_or(0)
-      .to_naive_date_time()
-      .date()
-      + Duration::days(1),
-    month_start
-  );
-  let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
+  let to = cmp::min(add_month(&month_start), Utc::today().naive_utc());
   if from >= to {
-    eprintln!("Already downloaded!");
+    eprintln!("Already downloaded {}!", month_format);
     return;
   }
-  let month_format = format!("{}-{:02}", year, month);
   eprintln!(
     "{}: Scanning agg1d for symbols in {}..{}",
     month_format, from, to
@@ -92,6 +101,10 @@ fn download_agg1m_month(
       symbols_from = partition[0].get_timestamp(0).to_naive_date_time().date();
       symbols_to = partition[0].get_timestamp(partition[0].row_count - 1).to_naive_date_time().date();
     }
+  }
+  if symbols.len() == 0{
+    eprintln!("{}: no agg1d", month_format);
+    return;
   }
 
   eprintln!(
@@ -173,7 +186,6 @@ fn download_agg1m_month(
     agg1m.put_currency(c.low);
     agg1m.put_currency(c.close);
     agg1m.put_u32(c.volume as u32);
-    agg1m.put_currency(0.0);
     agg1m.write();
   }
   eprintln!("{}: Flushing {} candles", month_format, num_candles);
@@ -200,25 +212,18 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
       Column::new("high", ColumnType::Currency),
       Column::new("low", ColumnType::Currency),
       Column::new("close", ColumnType::Currency),
-      Column::new("volume", ColumnType::U32),
-      Column::new("close_un", ColumnType::Currency),
+      Column::new("volume", ColumnType::U32)
     ])
     .partition_dirs(column_dirs)
     .partition_by(PartitionBy::Month);
 
   let mut agg1m = Table::create_or_open(schema).expect("Could not open table");
-  let from = match agg1m.get_last_ts() {
-    Some(ts) => {
-      let last_date = ts.to_naive_date_time().date();
-      NaiveDate::from_ymd(last_date.year(), last_date.month(), 1)
-    },
-    None => agg1d.get_first_ts().unwrap().to_naive_date_time().date()
-  };
+  let from = NaiveDate::from_ymd(2004, 1, 1);
   let today = Utc::now().naive_utc().date();
   let to = NaiveDate::from_ymd(today.year(), today.month(), 1);
   eprintln!("Downloading from {}-{:02} to {}-{:02}", from.year(), from.month(), to.year(), to.month());
-  let mut iter = from.clone();
-  while iter < to {
+  let mut iter = to.clone();
+  while iter > from {
     eprintln!("Downloading {}-{:02}", iter.year(), iter.month());
     download_agg1m_month(
       iter.year(),
@@ -229,6 +234,6 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
       &mut agg1m,
       client.clone()
     );
-    iter = add_month(&iter);
+    iter = sub_month(&iter);
   }
 }

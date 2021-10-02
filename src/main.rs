@@ -20,7 +20,7 @@ fn main() {
         .help("Sets ratelimit for polygon_io client")
         .long("ratelimit")
         .takes_value(true)
-        .default_value("100")
+        .default_value("95")
     )
     .arg(
       Arg::with_name("data-dir")
@@ -60,6 +60,7 @@ fn main() {
     .build();
   let mut handle = ratelimit.make_handle();
   thread::spawn(move || { ratelimit.run(); });
+  println!("Using ratelimit {}", polygon_limit);
 
   // Don't spawn too many threads
   let thread_pool = ThreadPool::new(polygon_limit);
@@ -81,11 +82,9 @@ fn main() {
   let download_all = !agg1d && !tickers && !agg1m && !trades;
 
   if download_all || agg1d {
-    eprintln!("Downloading agg1d");
     download_agg1d(&thread_pool, &mut handle, client.clone());
   }
   if download_all || tickers {
-    eprintln!("Downloading tickers1d");
     download_tickers(&thread_pool, &mut handle, client.clone());
   }
 

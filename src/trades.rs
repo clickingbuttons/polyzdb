@@ -1,9 +1,9 @@
 extern crate polygon_io;
 use crate::util::MarketDays;
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use polygon_io::{
   client::Client,
-  equities::trades::Trade
+  equities::trades::{Trade, TradesParams}
 };
 use std::{
   collections::HashSet,
@@ -20,6 +20,39 @@ use zdb::{
 };
 use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+// This API should use "q" for paging rather than "ts" which is not unique.
+// This method overcomes that by filtering the "q"s from the last page on the next page.
+const EST_OFFSET: i64 = 5 * 60 * 60 * 1_000_000_000;
+fn get_all_trades(client: &Client, ratelimit: &mut Handle, symbol: &str, date: NaiveDate) -> std::io::Result<Vec<Trade>> {
+  let limit: usize = 50_000;
+  let mut params = TradesParams::new().limit(limit);
+  let mut res = Vec::<Trade>::new();
+  let mut repeated_uids = Vec::<u64>::new();
+  loop {
+    ratelimit.wait();
+    let page = client.get_trades(symbol, date, Some(&params.params))?.results;
+    let page_len = page.len();
+    let page_last_ts = page[page_len - 1].ts;
+    res.extend(
+      page
+        .into_iter()
+        .filter(|trade| !repeated_uids.contains(&trade.seq_id))
+    );
+    if page_len != limit {
+      break;
+    } else {
+      repeated_uids = res
+        .iter()
+        .filter(|trade| trade.ts == page_last_ts)
+        .map(|trade| trade.seq_id)
+        .collect::<Vec<_>>();
+      params = params.timestamp(page_last_ts + EST_OFFSET);
+    }
+  }
+
+  Ok(res)
+}
 
 fn download_trades_day(
   date: NaiveDate,
@@ -67,8 +100,7 @@ fn download_trades_day(
     thread_pool.execute(move || {
       // Retry up to 50 times
       for j in 0..50 {
-        ratelimit.wait();
-        match client.get_all_trades(&sym, date) {
+        match get_all_trades(&client, &mut ratelimit, &sym, date) {
           Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
             trades_day.lock().unwrap().append(&mut resp);
@@ -120,18 +152,21 @@ fn download_trades_day(
     trades_table.put_timestamp(t.ts);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
-    trades_table.put_currency(t.price as f32);
     trades_table.put_f64(t.price);
     trades_table.put_u32(t.conditions);
     trades_table.put_u8(t.exchange);
     trades_table.put_u8(t.tape);
-    trades_table.put_u64(t.uid);
+    trades_table.put_u64(t.seq_id);
     trades_table.write();
   }
   eprintln!("{}: Flushing {} trades", date, num_trades);
   trades_table.flush();
   assert_eq!(trades_table.cur_partition_meta.row_count, num_trades);
-  assert_eq!(trades_table.partition_meta.get(&date.to_string()).unwrap().row_count, num_trades);
+  let num_rows_inserted = match trades_table.partition_meta.get(&date.to_string()) {
+    Some(meta) => meta.row_count,
+    None => 0
+  };
+  assert_eq!(num_rows_inserted, num_trades);
 
   eprintln!(
     "{}: downloaded in {}s",
@@ -145,30 +180,31 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
   // Setup DB
-  let schema = Schema::new("trades2")
+  let schema = Schema::new("trades")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp),
       Column::new("sym", ColumnType::Symbol16),
       Column::new("size", ColumnType::U32),
-      Column::new("price", ColumnType::Currency),
-      Column::new("price_f64", ColumnType::F64),
+      Column::new("price", ColumnType::F64),
       Column::new("conditions", ColumnType::U32),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
-      Column::new("uid", ColumnType::U64),
+      Column::new("seq_id", ColumnType::U64),
     ])
     .partition_dirs(partition_dirs)
     .partition_by(PartitionBy::Day);
 
   let mut trades = Table::create_or_open(schema).expect("Could not open table");
-  let from = match trades.get_last_ts() {
+  let from = NaiveDate::from_ymd(2004, 1, 1);
+  let to = match trades.get_first_ts() {
     Some(ts) => {
-      ts.to_naive_date_time().date() + Duration::days(1)
+      ts.to_naive_date_time().date()
     },
-    None => NaiveDate::from_ymd(2004, 1, 1)
+    None => Utc::now().naive_utc().date()
   };
-  let to = Utc::now().naive_utc().date();
-  for day in (MarketDays { from, to }) {
+  println!("Downloading trades from {}..{}", from, to);
+  let market_days = (MarketDays { from, to }).collect::<Vec<NaiveDate>>();
+  for day in market_days.into_iter().rev() {
     eprintln!("Downloading {}", day);
     download_trades_day(
       day,
