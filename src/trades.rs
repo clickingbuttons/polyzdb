@@ -76,7 +76,7 @@ fn download_trades_day(
   );
   for partition in partitions {
     for sym_index in partition[0].get_u16() {
-      let sym = partition[0].symbols[*sym_index as usize].clone();
+      let sym = partition[0].symbols[*sym_index as usize - 1].clone();
       symbols.insert(sym);
     }
   }
@@ -137,26 +137,22 @@ fn download_trades_day(
 
   let mut trades = trades.lock().unwrap();
   let num_trades = trades.len();
-  // Sort by ts, symbol
+  // Sort by seq_id which is also ts
   eprintln!("{}: Sorting {} trades", date, num_trades);
-  trades.sort_unstable_by(|c1, c2| {
-    if c1.ts == c2.ts {
-      c1.symbol.cmp(&c2.symbol)
-    } else {
-      c1.ts.cmp(&c2.ts)
-    }
-  });
+  trades.sort_unstable_by(|t1, t2| t1.seq_id.cmp(&t2.seq_id));
 
   eprintln!("{}: Writing {} trades", date, num_trades);
   for t in trades.drain(..) {
     trades_table.put_timestamp(t.ts);
+    trades_table.put_i64(t.ts_participant.unwrap_or(0));
+    trades_table.put_u64(t.id);
+    trades_table.put_u64(t.seq_id);
     trades_table.put_symbol(t.symbol.clone());
     trades_table.put_u32(t.size);
     trades_table.put_f64(t.price);
     trades_table.put_u32(t.conditions);
     trades_table.put_u8(t.exchange);
     trades_table.put_u8(t.tape);
-    trades_table.put_u64(t.seq_id);
     trades_table.write();
   }
   eprintln!("{}: Flushing {} trades", date, num_trades);
@@ -183,13 +179,16 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
   let schema = Schema::new("trades")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp),
+      Column::new("ts_participant", ColumnType::I64),
+      Column::new("id", ColumnType::U64),
+      Column::new("seq_id", ColumnType::U64),
       Column::new("sym", ColumnType::Symbol16),
       Column::new("size", ColumnType::U32),
       Column::new("price", ColumnType::F64),
-      Column::new("conditions", ColumnType::U32),
+      Column::new("cond", ColumnType::U32),
+      Column::new("err", ColumnType::U8),
       Column::new("exchange", ColumnType::U8),
       Column::new("tape", ColumnType::U8),
-      Column::new("seq_id", ColumnType::U64),
     ])
     .partition_dirs(partition_dirs)
     .partition_by(PartitionBy::Day);

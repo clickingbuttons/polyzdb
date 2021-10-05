@@ -36,7 +36,6 @@ fn add_month(date: &NaiveDate) -> NaiveDate {
   NaiveDate::from_ymd(to_year, to_month, date.day())
 }
 
-
 fn sub_month(date: &NaiveDate) -> NaiveDate {
   let mut to_year = date.year();
   let mut to_month = date.month();
@@ -71,7 +70,7 @@ fn download_agg1m_month(
     None => NaiveDate::from_ymd(year, month, 1)
   };
   let month_start = NaiveDate::from_ymd(year, month, 1);
-  let to = cmp::min(add_month(&month_start), Utc::today().naive_utc());
+  let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
   if from >= to {
     eprintln!("Already downloaded {}!", month_format);
     return;
@@ -84,23 +83,17 @@ fn download_agg1m_month(
   let partitions = agg1d.partition_iter(
     from.and_hms(0, 0, 0).timestamp_nanos(),
     to.and_hms(0, 0, 0).timestamp_nanos(),
-    vec!["ts", "sym", "volume"],
+    vec!["sym", "volume"],
   );
-  let mut symbols_from = from.clone();
-  let mut symbols_to = to.clone();
   for partition in partitions {
-    let sym_indexes = partition[1].get_u16();
-    let volumes = partition[2].get_u64();
+    let sym_indexes = partition[0].get_u16();
+    let volumes = partition[1].get_u64();
     volumes.iter().zip(sym_indexes.iter()).for_each(|(v, sym_i)| {
       if *v > 0 {
-        let sym = partition[1].symbols[*sym_i as usize].clone();
+        let sym = partition[0].symbols[*sym_i as usize - 1].clone();
         symbols.insert(sym);
       }
     });
-    if volumes.len() > 0 {
-      symbols_from = partition[0].get_timestamp(0).to_naive_date_time().date();
-      symbols_to = partition[0].get_timestamp(partition[0].row_count - 1).to_naive_date_time().date();
-    }
   }
   if symbols.len() == 0{
     eprintln!("{}: no agg1d", month_format);
@@ -108,11 +101,9 @@ fn download_agg1m_month(
   }
 
   eprintln!(
-    "{}: Downloading candles for {} symbols from {} to {}",
+    "{}: Downloading candles for {} symbols",
     month_format,
-    symbols.len(),
-    symbols_from,
-    symbols_to
+    symbols.len()
   );
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
   let counter = Arc::new(AtomicUsize::new(0));
@@ -181,10 +172,10 @@ fn download_agg1m_month(
   for c in candles.drain(..) {
     agg1m.put_timestamp(c.ts);
     agg1m.put_symbol(c.symbol);
-    agg1m.put_currency(c.open);
-    agg1m.put_currency(c.high);
-    agg1m.put_currency(c.low);
-    agg1m.put_currency(c.close);
+    agg1m.put_f64(c.open);
+    agg1m.put_f64(c.high);
+    agg1m.put_f64(c.low);
+    agg1m.put_f64(c.close);
     agg1m.put_u32(c.volume as u32);
     agg1m.write();
   }
@@ -208,10 +199,10 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(60 * 1_000_000_000),
       Column::new("sym", ColumnType::Symbol16),
-      Column::new("open", ColumnType::Currency),
-      Column::new("high", ColumnType::Currency),
-      Column::new("low", ColumnType::Currency),
-      Column::new("close", ColumnType::Currency),
+      Column::new("open", ColumnType::F64),
+      Column::new("high", ColumnType::F64),
+      Column::new("low", ColumnType::F64),
+      Column::new("close", ColumnType::F64),
       Column::new("volume", ColumnType::U32)
     ])
     .partition_dirs(column_dirs)

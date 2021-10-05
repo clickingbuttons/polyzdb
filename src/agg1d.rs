@@ -97,12 +97,11 @@ fn download_agg1d_year(
     }
     agg1d.put_timestamp(c.ts);
     agg1d.put_symbol(c.symbol);
-    agg1d.put_currency(c.open);
-    agg1d.put_currency(c.high);
-    agg1d.put_currency(c.low);
-    agg1d.put_currency(c.close);
+    agg1d.put_f64(c.open);
+    agg1d.put_f64(c.high);
+    agg1d.put_f64(c.low);
+    agg1d.put_f64(c.close);
     agg1d.put_u64(c.volume);
-    agg1d.put_currency(c.close);
     agg1d.write();
   }
   eprintln!("{}: Flushing {} candles", year, num_candles);
@@ -118,12 +117,11 @@ pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(24 * 60 * 60 * 1_000_000_000),
       Column::new("sym", ColumnType::Symbol16),
-      Column::new("open", ColumnType::Currency),
-      Column::new("high", ColumnType::Currency),
-      Column::new("low", ColumnType::Currency),
-      Column::new("close", ColumnType::Currency),
-      Column::new("volume", ColumnType::U64),
-      Column::new("close_un", ColumnType::Currency),
+      Column::new("open", ColumnType::F64),
+      Column::new("high", ColumnType::F64),
+      Column::new("low", ColumnType::F64),
+      Column::new("close", ColumnType::F64),
+      Column::new("volume", ColumnType::U64)
     ])
     .partition_by(PartitionBy::Year);
 

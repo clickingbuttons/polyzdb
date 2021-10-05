@@ -62,7 +62,7 @@ fn main() {
   thread::spawn(move || { ratelimit.run(); });
   println!("Using ratelimit {}", polygon_limit);
 
-  // Don't spawn too many threads
+  // Assume requests take at most 1s
   let thread_pool = ThreadPool::new(polygon_limit);
   
   // Holds API key
