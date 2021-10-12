@@ -116,7 +116,7 @@ pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   let schema = Schema::new("agg1d")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(24 * 60 * 60 * 1_000_000_000),
-      Column::new("sym", ColumnType::Symbol16),
+      Column::new("sym", ColumnType::Symbol16).with_sym_name("us_equities"),
       Column::new("open", ColumnType::F64),
       Column::new("high", ColumnType::F64),
       Column::new("low", ColumnType::F64),

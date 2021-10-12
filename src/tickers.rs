@@ -118,7 +118,7 @@ pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client
   let schema = Schema::new("tickers")
     .add_cols(vec![
       Column::new("ts", ColumnType::Timestamp).with_resolution(24 * 60 * 60 * 1_000_000_000),
-      Column::new("sym", ColumnType::Symbol16),
+      Column::new("sym", ColumnType::Symbol16).with_sym_name("us_equities"),
       Column::new("name", ColumnType::Symbol16),
       Column::new("primary_exchange", ColumnType::Symbol8),
       Column::new("type", ColumnType::Symbol8),

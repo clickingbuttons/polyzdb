@@ -182,7 +182,7 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
       Column::new("ts_participant", ColumnType::I64),
       Column::new("id", ColumnType::U64),
       Column::new("seq_id", ColumnType::U64),
-      Column::new("sym", ColumnType::Symbol16),
+      Column::new("sym", ColumnType::Symbol16).with_sym_name("us_equities"),
       Column::new("size", ColumnType::U32),
       Column::new("price", ColumnType::F64),
       Column::new("cond", ColumnType::U32),
