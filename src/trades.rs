@@ -1,6 +1,6 @@
 extern crate polygon_io;
 use crate::util::MarketDays;
-use chrono::{NaiveDate, Utc};
+use chrono::{NaiveDate, Utc, Duration};
 use polygon_io::{
   client::Client,
   equities::trades::{Trade, TradesParams}
@@ -14,7 +14,6 @@ use std::{
 };
 use threadpool::ThreadPool;
 use zdb::{
-  calendar::ToNaiveDateTime,
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
@@ -195,23 +194,21 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
 
   let mut trades = Table::create_or_open(schema).expect("Could not open table");
   let from = NaiveDate::from_ymd(2004, 1, 1);
-  let to = match trades.get_first_ts() {
-    Some(ts) => {
-      ts.to_naive_date_time().date()
-    },
-    None => Utc::now().naive_utc().date()
-  };
-  println!("Downloading trades from {}..{}", from, to);
+  let to = Utc::now().naive_utc().date();
   let market_days = (MarketDays { from, to }).collect::<Vec<NaiveDate>>();
   for day in market_days.into_iter().rev() {
-    eprintln!("Downloading {}", day);
-    download_trades_day(
-      day,
-      &thread_pool,
-      ratelimit,
-      &agg1d,
-      &mut trades,
-      client.clone()
-    );
+    if trades.partition_meta.get(&format!("{}", day.format("%Y-%m-%d"))).is_none() {
+      eprintln!("Downloading {}", day);
+      download_trades_day(
+        day,
+        &thread_pool,
+        ratelimit,
+        &agg1d,
+        &mut trades,
+        client.clone()
+      );
+    } else if day == to - Duration::days(1) {
+      eprintln!("Already downloaded trades for {}!", day);
+    }
   }
 }

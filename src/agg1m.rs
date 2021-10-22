@@ -72,7 +72,7 @@ fn download_agg1m_month(
   let month_start = NaiveDate::from_ymd(year, month, 1);
   let to = cmp::min(add_month(&month_start) - Duration::days(1), Utc::today().naive_utc());
   if from >= to {
-    eprintln!("Already downloaded {}!", month_format);
+    eprintln!("Already downloaded agg1m until {}!", from - Duration::days(1));
     return;
   }
   eprintln!(
@@ -181,7 +181,6 @@ fn download_agg1m_month(
   }
   eprintln!("{}: Flushing {} candles", month_format, num_candles);
   agg1m.flush();
-  assert_eq!(agg1m.cur_partition_meta.row_count, num_candles);
 
   eprintln!(
     "{}: downloaded in {}s",
@@ -212,19 +211,22 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   let from = NaiveDate::from_ymd(2004, 1, 1);
   let today = Utc::now().naive_utc().date();
   let to = NaiveDate::from_ymd(today.year(), today.month(), 1);
-  eprintln!("Downloading from {}-{:02} to {}-{:02}", from.year(), from.month(), to.year(), to.month());
   let mut iter = to.clone();
   while iter > from {
-    eprintln!("Downloading {}-{:02}", iter.year(), iter.month());
-    download_agg1m_month(
-      iter.year(),
-      iter.month(),
-      &thread_pool,
-      ratelimit,
-      &agg1d,
-      &mut agg1m,
-      client.clone()
-    );
+    let formatted = format!("{}-{:02}", iter.year(), iter.month());
+    let is_today = iter.year() == today.year() && iter.month() == today.month();
+    if agg1m.partition_meta.get(&formatted).is_none() || is_today {
+      eprintln!("Downloading agg1m {}", formatted);
+      download_agg1m_month(
+        iter.year(),
+        iter.month(),
+        &thread_pool,
+        ratelimit,
+        &agg1d,
+        &mut agg1m,
+        client.clone()
+      );
+    }
     iter = sub_month(&iter);
   }
 }

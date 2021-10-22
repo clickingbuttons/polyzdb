@@ -36,7 +36,7 @@ fn download_tickers_year(
   );
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   if from >= to || market_days.len() == 0 {
-    eprintln!("Already downloaded {}!", year);
+    eprintln!("Already downloaded tickers until {}!", from - Duration::days(1));
     return;
   }
 
@@ -134,7 +134,9 @@ pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client
   let to = (Utc::now().date() - Duration::days(1)).year();
   eprintln!("Downloading tickers");
   for i in (from..=to).rev() {
-    download_tickers_year(i, &thread_pool, ratelimit, &mut tickers, client.clone());
+    if tickers.partition_meta.get(&format!("{}", i)).is_none() || i == to {
+      download_tickers_year(i, &thread_pool, ratelimit, &mut tickers, client.clone());
+    }
   }
   eprintln!("Downloaded tickers in {}s", now.elapsed().as_secs());
 }

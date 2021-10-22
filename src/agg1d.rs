@@ -37,7 +37,7 @@ fn download_agg1d_year(
   );
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   if from >= to || market_days.len() == 0 {
-    eprintln!("Already downloaded {}!", year);
+    eprintln!("Already downloaded agg1d until {}!", from - Duration::days(1));
     return;
   }
   let candles = Arc::new(Mutex::new(Vec::<Candle>::new()));
@@ -130,7 +130,9 @@ pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   let to = (Utc::now().date() - Duration::days(1)).year();
   eprintln!("Downloading agg1d");
   for i in (from..=to).rev() {
-    download_agg1d_year(i, &thread_pool, ratelimit, &mut agg1d, client.clone());
+    if agg1d.partition_meta.get(&format!("{}", i)).is_none() || i == to {
+      download_agg1d_year(i, &thread_pool, ratelimit, &mut agg1d, client.clone());
+    }
   }
   eprintln!("Downloaded agg1d in {}s", now.elapsed().as_secs());
 }
