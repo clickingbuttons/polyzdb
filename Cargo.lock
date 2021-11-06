@@ -268,6 +268,7 @@ name = "polygon_io"
 version = "2.0.1"
 dependencies = [
  "chrono",
+ "ratelimit",
  "serde",
  "serde_json",
  "ureq",
@@ -280,7 +281,6 @@ dependencies = [
  "chrono",
  "clap",
  "polygon_io",
- "ratelimit",
  "threadpool",
  "zdb",
 ]

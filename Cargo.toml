@@ -10,7 +10,6 @@ chrono = "0.4"
 clap = "2.33.3"
 threadpool = "1.8.1"
 polygon_io = { path = "../polygon_io" }
-ratelimit = "0.4.4"
 zdb = { path = "../zdb" }
 
 [profile.release]

@@ -16,15 +16,13 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
-use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn download_agg1d_year(
   year: i32,
   thread_pool: &ThreadPool,
-  ratelimit: &mut Handle,
   agg1d: &mut Table,
-  client: Arc<Client>
+  client: &Client
 ) {
   let now = Instant::now();
   let from = match agg1d.partition_meta.get(&year.to_string()) {
@@ -48,14 +46,12 @@ fn download_agg1d_year(
   eprintln!("{:3} / {} days", 0, num_days);
   for day in market_days.into_iter() {
     let candles_year = Arc::clone(&candles);
-    let client = client.clone();
+    let mut client = client.clone();
     let grouped_params = GroupedParams::new().unadjusted(true).params;
-    let mut ratelimit = ratelimit.clone();
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 10 times
       for j in 0..10 {
-        ratelimit.wait();
         match client.get_grouped(Locale::US, Market::Stocks, day, Some(&grouped_params)) {
           Ok(mut resp) => {
             candles_year.lock().unwrap().append(&mut resp.results);
@@ -110,7 +106,7 @@ fn download_agg1d_year(
   eprintln!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
-pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+pub fn download_agg1d(thread_pool: &ThreadPool, client: &mut Client) {
   let now = Instant::now();
   // Setup DB
   let schema = Schema::new("agg1d")
@@ -131,7 +127,7 @@ pub fn download_agg1d(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
   eprintln!("Downloading agg1d");
   for i in (from..=to).rev() {
     if agg1d.partition_meta.get(&format!("{}", i)).is_none() || i == to {
-      download_agg1d_year(i, &thread_pool, ratelimit, &mut agg1d, client.clone());
+      download_agg1d_year(i, &thread_pool, &mut agg1d, client);
     }
   }
   eprintln!("Downloaded agg1d in {}s", now.elapsed().as_secs());

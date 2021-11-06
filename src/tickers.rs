@@ -15,15 +15,13 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
-use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn download_tickers_year(
   year: i32,
   thread_pool: &ThreadPool,
-  ratelimit: &mut Handle,
   tickers: &mut Table,
-  client: Arc<Client>
+  client: &mut Client
 ) {
   let now = Instant::now();
   let from = match tickers.partition_meta.get(&year.to_string()) {
@@ -48,13 +46,11 @@ fn download_tickers_year(
   eprintln!("{:3} / {} days", 0, num_days);
   for day in market_days.into_iter() {
     let tickers_year = Arc::clone(&tickers_year);
-    let client = client.clone();
-    let mut ratelimit = ratelimit.clone();
+    let mut client = client.clone();
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 10 times
       for j in 0..10 {
-        ratelimit.wait();
         match client.get_all_tickers_vx(&day) {
           Ok(mut results) => {
             for ticker in results.iter_mut() {
@@ -112,7 +108,7 @@ fn download_tickers_year(
   eprintln!("{}: done in {}s", year, now.elapsed().as_secs());
 }
 
-pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>) {
+pub fn download_tickers(thread_pool: &ThreadPool, client: &mut Client) {
   let now = Instant::now();
   // Setup DB
   let schema = Schema::new("tickers")
@@ -135,7 +131,7 @@ pub fn download_tickers(thread_pool: &ThreadPool, ratelimit: &mut Handle, client
   eprintln!("Downloading tickers");
   for i in (from..=to).rev() {
     if tickers.partition_meta.get(&format!("{}", i)).is_none() || i == to {
-      download_tickers_year(i, &thread_pool, ratelimit, &mut tickers, client.clone());
+      download_tickers_year(i, &thread_pool, &mut tickers, client);
     }
   }
   eprintln!("Downloaded tickers in {}s", now.elapsed().as_secs());

@@ -3,7 +3,7 @@ use crate::util::MarketDays;
 use chrono::{NaiveDate, Utc, Duration};
 use polygon_io::{
   client::Client,
-  equities::trades::{Trade, TradesParams}
+  equities::trades::Trade
 };
 use std::{
   collections::HashSet,
@@ -17,49 +17,14 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
-use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-// This API should use "q" for paging rather than "ts" which is not unique.
-// This method overcomes that by filtering the "q"s from the last page on the next page.
-const EST_OFFSET: i64 = 5 * 60 * 60 * 1_000_000_000;
-fn get_all_trades(client: &Client, ratelimit: &mut Handle, symbol: &str, date: NaiveDate) -> std::io::Result<Vec<Trade>> {
-  let limit: usize = 50_000;
-  let mut params = TradesParams::new().limit(limit);
-  let mut res = Vec::<Trade>::new();
-  let mut repeated_uids = Vec::<u64>::new();
-  loop {
-    ratelimit.wait();
-    let page = client.get_trades(symbol, date, Some(&params.params))?.results;
-    let page_len = page.len();
-    let page_last_ts = page[page_len - 1].ts;
-    res.extend(
-      page
-        .into_iter()
-        .filter(|trade| !repeated_uids.contains(&trade.seq_id))
-    );
-    if page_len != limit {
-      break;
-    } else {
-      repeated_uids = res
-        .iter()
-        .filter(|trade| trade.ts == page_last_ts)
-        .map(|trade| trade.seq_id)
-        .collect::<Vec<_>>();
-      params = params.timestamp(page_last_ts + EST_OFFSET);
-    }
-  }
-
-  Ok(res)
-}
 
 fn download_trades_day(
   date: NaiveDate,
   thread_pool: &ThreadPool,
-  ratelimit: &mut Handle,
   agg1d: &Table,
   trades_table: &mut Table,
-  client: Arc<Client>
+  client: &mut Client
 ) {
   let now = Instant::now();
   let from = date.clone();
@@ -93,13 +58,12 @@ fn download_trades_day(
     let day_format = date.clone();
     let sym = sym.clone();
     let trades_day = Arc::clone(&trades);
-    let client = client.clone();
-    let mut ratelimit = ratelimit.clone();
+    let mut client = client.clone();
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 50 times
       for j in 0..50 {
-        match get_all_trades(&client, &mut ratelimit, &sym, date) {
+        match client.get_all_trades(&sym, date) {
           Ok(mut resp) => {
             // println!("{} {:6}: {} candles", month_format, sym, candles.len());
             trades_day.lock().unwrap().append(&mut resp);
@@ -170,7 +134,7 @@ fn download_trades_day(
   )
 }
 
-pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, partition_dirs: Vec<&str>) {
+pub fn download_trades(thread_pool: &ThreadPool, client: &mut Client, partition_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in trades");
@@ -202,10 +166,9 @@ pub fn download_trades(thread_pool: &ThreadPool, ratelimit: &mut Handle, client:
       download_trades_day(
         day,
         &thread_pool,
-        ratelimit,
         &agg1d,
         &mut trades,
-        client.clone()
+        client
       );
     } else if day == to - Duration::days(1) {
       eprintln!("Already downloaded trades for {}!", day);

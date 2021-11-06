@@ -20,7 +20,6 @@ use zdb::{
   schema::{Column, ColumnType, PartitionBy, Schema},
   table::Table
 };
-use ratelimit::Handle;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn add_month(date: &NaiveDate) -> NaiveDate {
@@ -53,10 +52,9 @@ fn download_agg1m_month(
   year: i32,
   month: u32,
   thread_pool: &ThreadPool,
-  ratelimit: &mut Handle,
   agg1d: &Table,
   agg1m: &mut Table,
-  client: Arc<Client>
+  client: &mut Client
 ) {
   // The US equity market is open from 4:00-20:00 which is 960 minutes.
   // We could download up to 50k bars/request with &limit=50000, which is 52 days.
@@ -113,14 +111,12 @@ fn download_agg1m_month(
     let month_format = month_format.clone();
     let sym = sym.clone();
     let candles_year = Arc::clone(&candles);
-    let client = client.clone();
-    let mut ratelimit = ratelimit.clone();
+    let mut client = client.clone();
     let params = AggsParams::new().unadjusted(true).limit(50_000).params;
     let counter = counter.clone();
     thread_pool.execute(move || {
       // Retry up to 50 times
       for j in 0..50 {
-        ratelimit.wait();
         match client.get_aggs(&sym, 1, Timespan::Minute, from, to, Some(&params)) {
           Ok(mut resp) => {
             candles_year.lock().unwrap().append(&mut resp.results);
@@ -189,7 +185,7 @@ fn download_agg1m_month(
   )
 }
 
-pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: Arc<Client>, column_dirs: Vec<&str>) {
+pub fn download_agg1m(thread_pool: &ThreadPool, client: &mut Client, column_dirs: Vec<&str>) {
   // Get existing symbols
   let agg1d =
     Table::open("agg1d").expect("Table agg1d must exist to load symbols to download in agg1m");
@@ -221,10 +217,9 @@ pub fn download_agg1m(thread_pool: &ThreadPool, ratelimit: &mut Handle, client: 
         iter.year(),
         iter.month(),
         &thread_pool,
-        ratelimit,
         &agg1d,
         &mut agg1m,
-        client.clone()
+        client
       );
     }
     iter = sub_month(&iter);
