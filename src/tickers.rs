@@ -2,7 +2,7 @@ use crate::util::MarketDays;
 use chrono::{Datelike, Duration, NaiveDate, Utc, FixedOffset, TimeZone};
 use polygon_io::{
   client::Client,
-  reference::tickers::TickerVx
+  reference::tickers::Ticker
 };
 use std::{
   cmp, process,
@@ -38,7 +38,7 @@ fn download_tickers_year(
     return;
   }
 
-  let tickers_year = Arc::new(Mutex::new(Vec::<TickerVx>::new()));
+  let tickers_year = Arc::new(Mutex::new(Vec::<Ticker>::new()));
   eprintln!("Downloading tickers in {}..{}", from, to);
   let market_days = (MarketDays { from, to }).collect::<Vec<_>>();
   let num_days = market_days.len();
@@ -51,7 +51,7 @@ fn download_tickers_year(
     thread_pool.execute(move || {
       // Retry up to 10 times
       for j in 0..10 {
-        match client.get_all_tickers_vx(&day) {
+        match client.get_all_tickers(&day) {
           Ok(mut results) => {
             for ticker in results.iter_mut() {
               // Hijack this mostly useless field to put current date
