@@ -114,6 +114,7 @@ fn download_trades_day(
     trades_table.put_u32(t.size);
     trades_table.put_f64(t.price);
     trades_table.put_u32(t.conditions);
+    trades_table.put_u8(t.error);
     trades_table.put_u8(t.exchange);
     trades_table.put_u8(t.tape);
     trades_table.write();
