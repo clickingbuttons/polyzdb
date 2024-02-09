@@ -1,5 +1,7 @@
 # polyzdb
 
+ZDB is now defunct, see https://github.com/clickingbuttons/zdb
+
 Download [Polygon.io](https://polygon.io) data into zdb.
 
 ## Checksums
